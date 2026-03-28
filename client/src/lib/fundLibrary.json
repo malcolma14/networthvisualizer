@@ -1,11 +1,4 @@
 {
-  "_meta": {
-    "description": "Static fund lookup table. Checked before web search. Add new entries here to avoid API calls.",
-    "lastUpdated": "2026-03-28",
-    "managedBy": "Edit this file in GitHub at client/src/lib/fundLibrary.json",
-    "fundCount": 12
-  },
-
   "IGI1889": {
     "code": "IGI1889",
     "fullName": "iProfile Low Volatility Private Pool Series I",
