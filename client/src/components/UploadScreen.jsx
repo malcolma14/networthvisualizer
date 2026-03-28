@@ -5,7 +5,7 @@ import { analyseCSV } from '../lib/claude';
 const STATUS_MESSAGES = [
   'Reading the statement…',
   'Parsing accounts and holdings…',
-  'Looking up holdings on FundLibrary…',
+  'Researching holdings via FundLibrary…',
   'Analyzing asset allocation…',
   'Preparing questions…',
 ];
@@ -45,8 +45,7 @@ export default function UploadScreen({ onComplete }) {
       const analysis = await analyseCSV(result.data, (msg) => {
         const idx = STATUS_MESSAGES.findIndex((m) => m === msg);
         if (idx >= 0) setStatusIndex(idx);
-        // Also match partial messages like "Looking up holdings… 2/5"
-        if (msg?.startsWith('Looking up holdings')) setStatusIndex(2);
+        if (msg?.startsWith('Researching holdings')) setStatusIndex(2);
       });
       clearInterval(interval);
       onComplete(analysis);

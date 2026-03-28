@@ -11,7 +11,16 @@ function formatCurrency(value) {
   }).format(value);
 }
 
-const ASSET_COLORS = {
+const GEO_COLORS = {
+  'Canada': '#001E60',
+  'United States': '#0072CE',
+  'Europe': '#00966C',
+  'Japan': '#ED8B00',
+  'Asia ex-Japan': '#8DD0EF',
+  'Other/EM': '#7A99AC',
+};
+
+const SUB_COLORS = {
   'Canadian equity': '#001E60',
   'US equity': '#0072CE',
   'International equity': '#8DD0EF',
@@ -24,168 +33,107 @@ const ASSET_COLORS = {
   'Other': '#BCBCBC',
 };
 
-const GEO_COLORS = {
-  'Canada': '#001E60',
-  'United States': '#0072CE',
-  'Europe': '#00966C',
-  'Japan': '#ED8B00',
-  'Asia ex-Japan': '#8DD0EF',
-  'Other/EM': '#7A99AC',
-};
+/* ─── Donut Chart ─── */
+function polarToCartesian(cx, cy, r, deg) {
+  const rad = ((deg - 90) * Math.PI) / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
 
-const EQUITY_TYPES = new Set(['Canadian equity', 'US equity', 'International equity', 'Global equity']);
+function DonutChart({ slices, size = 220, onSliceClick, activeSlice }) {
+  const cx = size / 2, cy = size / 2, outerR = size / 2 - 8, innerR = outerR * 0.58;
+  let startAngle = 0;
 
-function BarRow({ name, value, percent, color, grossAssets, indent, sourceNote }) {
-  const maxPct = 60; // visual cap for bar width
-  const barWidth = Math.min(percent, maxPct) / maxPct * 100;
+  const paths = slices.map((s, i) => {
+    const sweep = (s.percent / 100) * 360;
+    if (sweep < 0.1) { startAngle += sweep; return null; }
+    const os = polarToCartesian(cx, cy, outerR, startAngle);
+    const oe = polarToCartesian(cx, cy, outerR, startAngle + sweep);
+    const is_ = polarToCartesian(cx, cy, innerR, startAngle + sweep);
+    const ie = polarToCartesian(cx, cy, innerR, startAngle);
+    const la = sweep > 180 ? 1 : 0;
+    const d = `M ${os.x} ${os.y} A ${outerR} ${outerR} 0 ${la} 1 ${oe.x} ${oe.y} L ${is_.x} ${is_.y} A ${innerR} ${innerR} 0 ${la} 0 ${ie.x} ${ie.y} Z`;
+    const isActive = activeSlice === s.name;
+    startAngle += sweep;
+    return (
+      <path
+        key={i}
+        d={d}
+        fill={s.color}
+        opacity={activeSlice && !isActive ? 0.35 : 1}
+        className="cursor-pointer transition-opacity"
+        onClick={() => onSliceClick?.(s.name)}
+      />
+    );
+  });
 
   return (
-    <div className={`flex items-center gap-3 py-1.5 ${indent ? 'pl-5' : ''}`}>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="mx-auto">
+      {paths}
+      <text x={cx} y={cy - 6} textAnchor="middle" className="fill-ig-dark text-[10px] font-semibold">Wealth</text>
+      <text x={cx} y={cy + 8} textAnchor="middle" className="fill-ig-dark text-[10px] font-semibold">allocation</text>
+    </svg>
+  );
+}
+
+/* ─── Bar Row ─── */
+function BarRow({ name, value, percent, color, indent }) {
+  const maxPct = 60;
+  const barWidth = Math.min(percent, maxPct) / maxPct * 100;
+  return (
+    <div className={`flex items-center gap-3 py-1.5 ${indent ? 'pl-6' : ''}`}>
       <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: color }} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-0.5">
-          <span className={`text-xs ${indent ? 'text-ig-grey' : 'font-medium text-ig-dark'} truncate`}>
-            {name}
-          </span>
+          <span className={`text-xs ${indent ? 'text-ig-grey' : 'font-medium text-ig-dark'} truncate`}>{name}</span>
           <div className="flex items-center gap-3 shrink-0 ml-2">
             <span className="text-xs font-semibold text-ig-dark">{formatCurrency(value)}</span>
             <span className="text-xs text-ig-grey w-12 text-right">{percent.toFixed(1)}%</span>
           </div>
         </div>
         <div className="h-1.5 bg-ig-pale rounded-full overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all"
-            style={{ width: `${barWidth}%`, backgroundColor: color }}
-          />
+          <div className="h-full rounded-full transition-all" style={{ width: `${barWidth}%`, backgroundColor: color }} />
         </div>
-        {sourceNote && (
-          <p className="text-[10px] text-ig-grey mt-0.5 truncate">{sourceNote}</p>
-        )}
       </div>
     </div>
   );
 }
 
+/* ─── Main Panel ─── */
 export default function ExposurePanel({ data, fundResearch }) {
   const [activeTab, setActiveTab] = useState('asset');
+  const [expandedGroup, setExpandedGroup] = useState(null);
 
-  const exposure = useMemo(
-    () => calculateExposure(data, fundResearch),
-    [data, fundResearch]
-  );
+  const exposure = useMemo(() => calculateExposure(data, fundResearch), [data, fundResearch]);
+  const { broadGroups, geographies, summaryChips, sources, distributions, fees } = exposure;
 
-  const { assetClasses, geographies, equityTotal, summaryChips, sources } = exposure;
+  const donutSlices = broadGroups.map((g) => ({ name: g.name, percent: g.percent, color: g.color }));
 
-  // Group equity sub-types under a single header
-  const equityItems = assetClasses.filter((a) => EQUITY_TYPES.has(a.name));
-  const nonEquityItems = assetClasses.filter((a) => !EQUITY_TYPES.has(a.name));
+  function handleSliceClick(name) {
+    setExpandedGroup((prev) => (prev === name ? null : name));
+    setActiveTab('asset');
+  }
 
   return (
-    <div className="bg-white rounded-xl border border-ig-grey/10 overflow-hidden print-break-avoid">
-      {/* Tab bar */}
-      <div className="flex border-b border-ig-grey/10">
-        <button
-          onClick={() => setActiveTab('asset')}
-          className={`flex-1 py-2.5 text-xs font-semibold text-center transition-colors ${
-            activeTab === 'asset'
-              ? 'text-ig-dark border-b-2 border-ig-mid'
-              : 'text-ig-grey hover:text-ig-dark'
-          }`}
-        >
-          Asset class
-        </button>
-        <button
-          onClick={() => setActiveTab('geo')}
-          className={`flex-1 py-2.5 text-xs font-semibold text-center transition-colors ${
-            activeTab === 'geo'
-              ? 'text-ig-dark border-b-2 border-ig-mid'
-              : 'text-ig-grey hover:text-ig-dark'
-          }`}
-        >
-          Geography
-        </button>
-      </div>
+    <div className="space-y-4">
+      {/* Donut chart card */}
+      <div className="bg-white rounded-xl border border-ig-grey/10 p-5 print-break-avoid">
+        <h3 className="text-sm font-bold text-ig-dark mb-4">Wealth allocation</h3>
+        <DonutChart slices={donutSlices} onSliceClick={handleSliceClick} activeSlice={expandedGroup} />
 
-      <div className="p-5">
-        {/* Asset class tab */}
-        {activeTab === 'asset' && (
-          <div className="space-y-0.5">
-            {/* Equity group */}
-            {equityItems.length > 0 && (
-              <div className="mb-2">
-                <div className="flex items-center justify-between py-1.5">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#0072CE' }} />
-                    <span className="text-xs font-bold text-ig-dark">Public equity</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs font-bold text-ig-dark">{formatCurrency(equityTotal.value)}</span>
-                    <span className="text-xs font-bold text-ig-grey w-12 text-right">{equityTotal.percent.toFixed(1)}%</span>
-                  </div>
-                </div>
-                {equityItems.map((item) => (
-                  <BarRow
-                    key={item.name}
-                    name={item.name}
-                    value={item.value}
-                    percent={item.percent}
-                    color={ASSET_COLORS[item.name] || '#BCBCBC'}
-                    grossAssets={data.grossAssets}
-                    indent
-                    sourceNote={
-                      item.sources?.length > 0
-                        ? item.sources.map((s) => `${s.code} ${s.pct}%`).join(' · ')
-                        : null
-                    }
-                  />
-                ))}
-              </div>
-            )}
-
-            {/* Non-equity items */}
-            {nonEquityItems.map((item) => (
-              <BarRow
-                key={item.name}
-                name={item.name}
-                value={item.value}
-                percent={item.percent}
-                color={ASSET_COLORS[item.name] || '#BCBCBC'}
-                grossAssets={data.grossAssets}
-                sourceNote={
-                  item.sources?.length > 0
-                    ? item.sources.map((s) => `${s.code} ${s.pct}%`).join(' · ')
-                    : null
-                }
-              />
-            ))}
-
-            {assetClasses.length === 0 && (
-              <p className="text-xs text-ig-grey text-center py-4">No exposure data available.</p>
-            )}
-          </div>
-        )}
-
-        {/* Geography tab */}
-        {activeTab === 'geo' && (
-          <div className="space-y-0.5">
-            {geographies.map((item) => (
-              <BarRow
-                key={item.name}
-                name={item.name}
-                value={item.value}
-                percent={item.percent}
-                color={GEO_COLORS[item.name] || '#BCBCBC'}
-                grossAssets={data.grossAssets}
-              />
-            ))}
-
-            {geographies.length === 0 && (
-              <p className="text-xs text-ig-grey text-center py-4">
-                Geographic data requires verified fund lookups.
-              </p>
-            )}
-          </div>
-        )}
+        {/* Legend */}
+        <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1">
+          {broadGroups.map((g) => (
+            <button
+              key={g.name}
+              onClick={() => handleSliceClick(g.name)}
+              className={`flex items-center gap-1.5 text-xs py-0.5 text-left transition-opacity ${expandedGroup && expandedGroup !== g.name ? 'opacity-40' : ''}`}
+            >
+              <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: g.color }} />
+              <span className="text-ig-dark truncate">{g.name}</span>
+              <span className="text-ig-grey font-medium ml-auto">{g.percent.toFixed(1)}%</span>
+            </button>
+          ))}
+        </div>
 
         {/* Summary chips */}
         {summaryChips.length > 0 && (
@@ -194,29 +142,173 @@ export default function ExposurePanel({ data, fundResearch }) {
               <div key={chip.label} className="bg-ig-pale rounded-lg px-3 py-2 text-center">
                 <p className="text-[10px] text-ig-grey uppercase tracking-wide">{chip.label}</p>
                 <p className="text-sm font-bold text-ig-dark">{formatCurrency(chip.value)}</p>
-                <p className="text-[10px] text-ig-grey">{chip.percent.toFixed(1)}% of gross</p>
+                <p className="text-[10px] text-ig-grey">{chip.percent.toFixed(1)}%</p>
               </div>
             ))}
           </div>
         )}
+      </div>
+
+      {/* Tabbed detail: Asset class / Geography */}
+      <div className="bg-white rounded-xl border border-ig-grey/10 overflow-hidden print-break-avoid">
+        <div className="flex border-b border-ig-grey/10">
+          {['asset', 'geo'].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => { setActiveTab(tab); setExpandedGroup(null); }}
+              className={`flex-1 py-2.5 text-xs font-semibold text-center transition-colors ${
+                activeTab === tab ? 'text-ig-dark border-b-2 border-ig-mid' : 'text-ig-grey hover:text-ig-dark'
+              }`}
+            >
+              {tab === 'asset' ? 'Asset class' : 'Geography'}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-4">
+          {activeTab === 'asset' && (
+            <div className="space-y-0.5">
+              {broadGroups.map((group) => {
+                const isExpanded = expandedGroup === group.name;
+                const hasChildren = group.children.length > 1;
+                return (
+                  <div key={group.name}>
+                    <button
+                      onClick={() => hasChildren && handleSliceClick(group.name)}
+                      className={`w-full ${hasChildren ? 'cursor-pointer' : 'cursor-default'}`}
+                    >
+                      <BarRow name={group.name} value={group.value} percent={group.percent} color={group.color} />
+                    </button>
+                    {isExpanded && hasChildren && (
+                      <div className="mb-2">
+                        {group.children.map((child) => (
+                          <BarRow
+                            key={child.name}
+                            name={child.name}
+                            value={child.value}
+                            percent={child.percent}
+                            color={SUB_COLORS[child.name] || '#BCBCBC'}
+                            indent
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {activeTab === 'geo' && (
+            <div className="space-y-0.5">
+              {geographies.map((item) => (
+                <BarRow key={item.name} name={item.name} value={item.value} percent={item.percent} color={GEO_COLORS[item.name] || '#BCBCBC'} />
+              ))}
+              {geographies.length === 0 && (
+                <p className="text-xs text-ig-grey text-center py-4">Geographic data requires verified fund lookups.</p>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Source attribution */}
         {sources.length > 0 && (
-          <div className="mt-3 pt-2 border-t border-ig-grey/10">
-            <p className="text-[10px] text-ig-grey leading-relaxed">
-              {sources.map((s) => {
-                if (s.verified && s.dataAsAt) {
-                  return `${s.code} as at ${s.dataAsAt}`;
-                }
-                if (s.verified) {
-                  return `${s.code} (verified)`;
-                }
-                return `${s.code} (unverified)`;
-              }).join(' · ')}
+          <div className="px-4 pb-3">
+            <p className="text-[10px] text-ig-grey leading-relaxed border-t border-ig-grey/10 pt-2">
+              {sources.map((s) =>
+                s.verified && s.dataAsAt ? `${s.code} as at ${s.dataAsAt}` :
+                s.verified ? `${s.code}` : `${s.code} (unverified)`
+              ).join(' · ')}
             </p>
           </div>
         )}
       </div>
+
+      {/* Distributions & Fees */}
+      {(distributions.holdings.length > 0 || fees.holdings.length > 0) && (
+        <DistributionsFeesPanel distributions={distributions} fees={fees} grossAssets={data.grossAssets} />
+      )}
+    </div>
+  );
+}
+
+/* ─── Distributions & Fees Sub-panel ─── */
+function DistributionsFeesPanel({ distributions, fees, grossAssets }) {
+  const [expanded, setExpanded] = useState(null); // 'dist' | 'fees' | null
+
+  return (
+    <div className="bg-white rounded-xl border border-ig-grey/10 overflow-hidden print-break-avoid">
+      {/* Distributions header */}
+      <button
+        onClick={() => setExpanded((p) => (p === 'dist' ? null : 'dist'))}
+        className="w-full px-5 py-3 flex items-center justify-between hover:bg-ig-pale/50 transition-colors border-b border-ig-grey/10"
+      >
+        <span className="text-sm font-bold text-ig-dark">Expected distributions</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-bold text-ig-green">{formatCurrency(distributions.total)}/yr</span>
+          {grossAssets > 0 && (
+            <span className="text-xs text-ig-grey">{((distributions.total / grossAssets) * 100).toFixed(2)}%</span>
+          )}
+          <svg className={`w-4 h-4 text-ig-grey transition-transform ${expanded === 'dist' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+
+      {expanded === 'dist' && (
+        <div className="px-5 py-2 divide-y divide-ig-pale">
+          {distributions.holdings.map((h, i) => (
+            <div key={i} className="py-2 flex items-center justify-between text-xs">
+              <div>
+                <p className="font-medium text-ig-dark">{h.name}</p>
+                <p className="text-ig-grey">
+                  {h.isPrivate
+                    ? `Gross: ${formatCurrency(h.grossRent)} — Exp: ${formatCurrency(h.expenses)}`
+                    : `${h.yield.toFixed(2)}% yield · ${h.frequency}`}
+                </p>
+              </div>
+              <span className="font-semibold text-ig-green">{formatCurrency(h.annualDist)}/yr</span>
+            </div>
+          ))}
+          {distributions.holdings.length === 0 && (
+            <p className="py-3 text-xs text-ig-grey text-center">No distribution data available.</p>
+          )}
+        </div>
+      )}
+
+      {/* Fees header */}
+      <button
+        onClick={() => setExpanded((p) => (p === 'fees' ? null : 'fees'))}
+        className="w-full px-5 py-3 flex items-center justify-between hover:bg-ig-pale/50 transition-colors"
+      >
+        <span className="text-sm font-bold text-ig-dark">Expected fees (MER)</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-bold text-ig-red">{formatCurrency(fees.total)}/yr</span>
+          {fees.weightedMER > 0 && (
+            <span className="text-xs text-ig-grey">{fees.weightedMER.toFixed(2)}% wtd avg</span>
+          )}
+          <svg className={`w-4 h-4 text-ig-grey transition-transform ${expanded === 'fees' ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+
+      {expanded === 'fees' && (
+        <div className="px-5 py-2 divide-y divide-ig-pale">
+          {fees.holdings.map((h, i) => (
+            <div key={i} className="py-2 flex items-center justify-between text-xs">
+              <div>
+                <p className="font-medium text-ig-dark">{h.name}</p>
+                <p className="text-ig-grey">MER: {h.mer.toFixed(2)}% · on {formatCurrency(h.value)}</p>
+              </div>
+              <span className="font-semibold text-ig-red">{formatCurrency(h.annualFee)}/yr</span>
+            </div>
+          ))}
+          {fees.holdings.length === 0 && (
+            <p className="py-3 text-xs text-ig-grey text-center">No MER data available.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

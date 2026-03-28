@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { initClient } from './lib/claude';
-import { clearCache as clearFundCache } from './lib/fundLookup';
+
 import PasswordScreen from './components/PasswordScreen';
 import UploadScreen from './components/UploadScreen';
 import ChatScreen from './components/ChatScreen';
@@ -52,7 +52,7 @@ export default function App() {
     setScreen(SCREENS.UPLOAD);
     setAnalysisData(null);
     setFundResearch({});
-    clearFundCache();
+    // Fund research cache is per-analysis, no separate clear needed
   }
 
   return (

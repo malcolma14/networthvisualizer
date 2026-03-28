@@ -45,7 +45,7 @@ export default function Dashboard({ data, fundResearch, onReset }) {
 
   return (
     <div className="dashboard-container min-h-screen bg-ig-pale">
-      {/* Top bar (no-print) */}
+      {/* Top bar */}
       <div className="no-print bg-ig-dark text-white px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h1 className="font-bold text-sm">Net Worth Dashboard</h1>
@@ -53,10 +53,7 @@ export default function Dashboard({ data, fundResearch, onReset }) {
         </div>
         <div className="flex items-center gap-3">
           <PrintButton />
-          <button
-            onClick={onReset}
-            className="text-xs text-ig-light hover:text-white transition-colors"
-          >
+          <button onClick={onReset} className="text-xs text-ig-light hover:text-white transition-colors">
             Start over
           </button>
         </div>
@@ -69,15 +66,12 @@ export default function Dashboard({ data, fundResearch, onReset }) {
             <div>
               <h2 className="text-2xl font-bold text-ig-dark">Net worth statement</h2>
               <p className="text-ig-grey text-sm">
-                {data.clientName || 'Client'} &middot;{' '}
-                {data.preparedDate || today}
+                {data.clientName || 'Client'} &middot; {data.preparedDate || today}
               </p>
             </div>
             <div className="text-right">
               <p className="text-sm text-ig-grey">Total net worth</p>
-              <p className="text-3xl font-bold text-ig-dark">
-                {formatCurrency(data.netWorth)}
-              </p>
+              <p className="text-3xl font-bold text-ig-dark">{formatCurrency(data.netWorth)}</p>
             </div>
           </div>
           <div className="h-px bg-ig-dark/10 mt-3" />
@@ -100,69 +94,62 @@ export default function Dashboard({ data, fundResearch, onReset }) {
           ))}
         </div>
 
-        {/* Two-column layout */}
-        <div className="dashboard-grid grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
-          {/* Left column — account breakdown */}
+        {/* Two-column layout: Exposure (left, dominant) | Account details (right, compact) */}
+        <div className="dashboard-grid grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
+          {/* LEFT — Wealth allocation, exposure, distributions, fees */}
+          <ExposurePanel data={data} fundResearch={fundResearch} />
+
+          {/* RIGHT — Account details + net worth summary */}
           <div className="space-y-3">
-            {filteredClasses.length > 0 ? (
-              filteredClasses.map((group, i) => (
-                <AssetGroup
-                  key={group.name || i}
-                  group={group}
-                  grossAssets={data.grossAssets}
-                  fundResearch={fundResearch}
-                />
-              ))
-            ) : (
-              <div className="text-center py-12 text-ig-grey">
-                No assets found for this owner.
-              </div>
-            )}
-
-            {/* Liabilities */}
-            {data.liabilities && data.liabilities.length > 0 && (
-              <div className="bg-white rounded-xl border border-ig-grey/10 overflow-hidden print-break-avoid">
-                <div className="px-5 py-3 bg-ig-grey/10 flex items-center justify-between">
-                  <h3 className="font-bold text-ig-dark text-sm">Liabilities</h3>
-                  <span className="text-sm font-semibold text-ig-red">
-                    {formatCurrency(
-                      data.liabilities.reduce((s, l) => s + (l.value || 0), 0)
-                    )}
-                  </span>
-                </div>
-                <div className="divide-y divide-ig-pale">
-                  {data.liabilities.map((l, i) => (
-                    <div key={i} className="px-5 py-2.5 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-ig-dark">{l.name}</p>
-                        <p className="text-xs text-ig-grey">{l.owner}</p>
-                      </div>
-                      <p className="text-sm font-semibold text-ig-red">
-                        {formatCurrency(l.value)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Right column — exposure view + summary */}
-          <div className="space-y-4">
-            <ExposurePanel data={data} fundResearch={fundResearch} />
             <SummaryPanel data={data} />
+
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold text-ig-grey uppercase tracking-wide px-1">Account details</h3>
+              {filteredClasses.length > 0 ? (
+                filteredClasses.map((group, i) => (
+                  <AssetGroup
+                    key={group.name || i}
+                    group={group}
+                    grossAssets={data.grossAssets}
+                    fundResearch={fundResearch}
+                  />
+                ))
+              ) : (
+                <div className="text-center py-8 text-ig-grey text-xs">
+                  No assets found for this owner.
+                </div>
+              )}
+
+              {/* Liabilities */}
+              {data.liabilities && data.liabilities.length > 0 && (
+                <div className="bg-white rounded-xl border border-ig-grey/10 overflow-hidden print-break-avoid">
+                  <div className="px-4 py-2.5 bg-ig-grey/10 flex items-center justify-between">
+                    <h3 className="font-bold text-ig-dark text-xs">Liabilities</h3>
+                    <span className="text-xs font-semibold text-ig-red">
+                      {formatCurrency(data.liabilities.reduce((s, l) => s + (l.value || 0), 0))}
+                    </span>
+                  </div>
+                  <div className="divide-y divide-ig-pale">
+                    {data.liabilities.map((l, i) => (
+                      <div key={i} className="px-4 py-2 flex items-center justify-between">
+                        <div>
+                          <p className="text-xs text-ig-dark">{l.name}</p>
+                          <p className="text-[10px] text-ig-grey">{l.owner}</p>
+                        </div>
+                        <p className="text-xs font-semibold text-ig-red">{formatCurrency(l.value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Footer */}
         <div className="mt-8 pt-4 border-t border-ig-dark/10 text-xs text-ig-grey text-center">
-          <p>
-            Prepared by Adam Malcolm, CFP, MFA-P &middot; IG Wealth Management &middot;{' '}
-            {today}
-          </p>
-          <p className="mt-0.5 italic">
-            For discussion purposes only. Verify all data before client distribution.
-          </p>
+          <p>Prepared by Adam Malcolm, CFP, MFA-P &middot; IG Wealth Management &middot; {today}</p>
+          <p className="mt-0.5 italic">For discussion purposes only. Verify all data before client distribution.</p>
         </div>
       </div>
     </div>
