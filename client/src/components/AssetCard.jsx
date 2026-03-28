@@ -26,18 +26,10 @@ export default function AssetCard({ asset, grossAssets, fundResearch }) {
                 {asset.subClass}
               </span>
             )}
-            {asset.locationFlag && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-ig-amber/10 text-ig-amber font-medium">
-                ⚠ Tax location
-              </span>
-            )}
           </div>
           <p className="text-xs text-ig-grey mt-0.5">
             {asset.owner} &middot; {asset.accountType}
           </p>
-          {asset.notes && (
-            <p className="text-xs text-ig-grey italic mt-0.5">{asset.notes}</p>
-          )}
         </div>
         <div className="text-right ml-4 shrink-0">
           <p className="text-sm font-semibold text-ig-dark">{formatCurrency(asset.value)}</p>
@@ -68,6 +60,7 @@ export default function AssetCard({ asset, grossAssets, fundResearch }) {
               {asset.holdings.map((h, i) => {
                 const research =
                   h.researchResult || (h.code && fundResearch?.[h.code]) || null;
+                const isVerified = research?.verified;
                 return (
                   <div
                     key={i}
@@ -81,26 +74,26 @@ export default function AssetCard({ asset, grossAssets, fundResearch }) {
                         {formatCurrency(h.value)}
                       </span>
                     </div>
-                    {research && (
+                    {research && isVerified && research.fullName && (
                       <div className="mt-1.5 space-y-0.5">
                         <p className="text-ig-dark">
                           <span className="font-medium">{research.fullName}</span>
-                          {research.manager && research.manager !== 'Unknown' && (
-                            <span className="text-ig-grey"> — {research.manager}</span>
+                          {research.fundCompany && (
+                            <span className="text-ig-grey"> — {research.fundCompany}</span>
                           )}
                         </p>
-                        {research.assetClass && research.assetClass !== 'Unknown' && (
-                          <p className="text-ig-grey">Class: {research.assetClass}</p>
+                        {research.cifscCategory && (
+                          <p className="text-ig-grey">{research.cifscCategory}</p>
                         )}
-                        {research.description && (
-                          <p className="text-ig-grey">{research.description}</p>
-                        )}
-                        {research.confidence === 'Low' && (
-                          <span className="inline-block mt-1 text-ig-amber font-medium">
-                            ⚠ Low confidence — verify with fund provider
-                          </span>
+                        {research.dataAsAt && (
+                          <p className="text-ig-grey">Data as at {research.dataAsAt}</p>
                         )}
                       </div>
+                    )}
+                    {(!research || !isVerified) && (
+                      <p className="mt-1 text-ig-amber text-xs font-medium">
+                        Unverified — confirm with advisor
+                      </p>
                     )}
                   </div>
                 );

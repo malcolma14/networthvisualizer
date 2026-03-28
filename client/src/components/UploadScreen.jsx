@@ -5,7 +5,7 @@ import { analyseCSV } from '../lib/claude';
 const STATUS_MESSAGES = [
   'Reading the statement…',
   'Parsing accounts and holdings…',
-  'Researching holdings…',
+  'Looking up holdings on FundLibrary…',
   'Analyzing asset allocation…',
   'Preparing questions…',
 ];
@@ -41,10 +41,12 @@ export default function UploadScreen({ onComplete }) {
         throw new Error('The CSV file appears to be empty or could not be parsed.');
       }
 
-      // Run analysis client-side via Claude
+      // Run analysis client-side via Claude + FundLibrary
       const analysis = await analyseCSV(result.data, (msg) => {
         const idx = STATUS_MESSAGES.findIndex((m) => m === msg);
         if (idx >= 0) setStatusIndex(idx);
+        // Also match partial messages like "Looking up holdings… 2/5"
+        if (msg?.startsWith('Looking up holdings')) setStatusIndex(2);
       });
       clearInterval(interval);
       onComplete(analysis);
@@ -157,7 +159,7 @@ export default function UploadScreen({ onComplete }) {
               {STATUS_MESSAGES[statusIndex]}
             </p>
             <p className="text-ig-grey text-sm">
-              This may take a minute — we're researching your client's holdings.
+              This may take a minute — we're looking up your client's holdings.
             </p>
             <div className="mt-6 flex justify-center gap-1.5">
               {STATUS_MESSAGES.map((_, i) => (

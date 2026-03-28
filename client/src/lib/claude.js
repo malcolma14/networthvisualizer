@@ -1,13 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {
   ANALYSIS_SYSTEM_PROMPT,
-  FUND_RESEARCH_SYSTEM_PROMPT,
   CHAT_SYSTEM_PROMPT,
   buildAnalysisPrompt,
   buildChatPrompt,
 } from './promptBuilder.js';
 import { parseCSVData } from './csvParser.js';
 import { classifyAndFlag } from './assetClassifier.js';
+import { lookupAllFunds } from './fundLookup.js';
 
 let client = null;
 
@@ -22,40 +22,6 @@ export function isClientReady() {
   return client !== null;
 }
 
-async function researchFund(fundCode) {
-  try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 500,
-      system: FUND_RESEARCH_SYSTEM_PROMPT,
-      messages: [
-        { role: 'user', content: `Research this Canadian investment fund code: ${fundCode}` },
-      ],
-    });
-
-    const text = response.content[0]?.text || '';
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) return JSON.parse(jsonMatch[0]);
-
-    return {
-      fullName: 'Unknown',
-      manager: 'Unknown',
-      assetClass: 'Unknown',
-      description: `Could not identify fund ${fundCode}`,
-      confidence: 'Low',
-    };
-  } catch (err) {
-    console.error(`Fund research failed for ${fundCode}:`, err.message);
-    return {
-      fullName: 'Unknown',
-      manager: 'Unknown',
-      assetClass: 'Unknown',
-      description: `Research failed for ${fundCode}`,
-      confidence: 'Low',
-    };
-  }
-}
-
 export async function analyseCSV(csvData, onStatus) {
   if (!client) throw new Error('API key not set');
 
@@ -63,22 +29,17 @@ export async function analyseCSV(csvData, onStatus) {
   const parsedData = parseCSVData(csvData);
   const classification = classifyAndFlag(parsedData);
 
-  // Research fund codes in parallel
-  onStatus?.('Researching holdings…');
+  // Look up fund codes via FundLibrary (not Claude)
+  onStatus?.('Looking up holdings on FundLibrary…');
   const fundResults = {};
   if (classification.fundCodes.length > 0) {
-    const results = await Promise.all(
-      classification.fundCodes.map(async (code) => {
-        const result = await researchFund(code);
-        return { code, result };
-      })
-    );
-    results.forEach(({ code, result }) => {
-      fundResults[code] = result;
+    const results = await lookupAllFunds(classification.fundCodes, (done, total) => {
+      onStatus?.(`Looking up holdings… ${done}/${total}`);
     });
+    Object.assign(fundResults, results);
   }
 
-  // Full analysis via Claude
+  // Full analysis via Claude (facts only, no advisory language)
   onStatus?.('Analyzing asset allocation…');
   const prompt = buildAnalysisPrompt(parsedData, classification);
   const response = await client.messages.create({
@@ -94,7 +55,7 @@ export async function analyseCSV(csvData, onStatus) {
 
   const analysisResult = JSON.parse(jsonMatch[0]);
 
-  // Merge fund research
+  // Merge fund research from FundLibrary into holdings
   if (analysisResult.assetClasses) {
     for (const assetClass of analysisResult.assetClasses) {
       for (const asset of assetClass.assets || []) {
@@ -106,6 +67,10 @@ export async function analyseCSV(csvData, onStatus) {
       }
     }
   }
+
+  // Strip any advisory language Claude may have generated
+  delete analysisResult.planningFlags;
+  delete analysisResult.assumptionsAndNotes;
 
   if (!analysisResult.owners || analysisResult.owners.length === 0) {
     analysisResult.owners = parsedData.owners;
@@ -129,16 +94,11 @@ export async function submitChat(currentData, questions, answers) {
   const jsonMatch = text.match(/\{[\s\S]*\}/);
 
   if (jsonMatch) {
-    return { data: JSON.parse(jsonMatch[0]) };
+    const updated = JSON.parse(jsonMatch[0]);
+    delete updated.planningFlags;
+    delete updated.assumptionsAndNotes;
+    return { data: updated };
   }
 
-  // Fallback: annotate original data
-  const updated = { ...currentData };
-  if (!updated.assumptionsAndNotes) updated.assumptionsAndNotes = [];
-  answers.forEach((answer, i) => {
-    if (answer && questions[i]) {
-      updated.assumptionsAndNotes.push(`${questions[i].question} — Advisor: ${answer}`);
-    }
-  });
-  return { data: updated };
+  return { data: currentData };
 }

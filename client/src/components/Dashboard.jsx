@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import AssetGroup from './AssetGroup';
 import SummaryPanel from './SummaryPanel';
+import ExposurePanel from './ExposurePanel';
 import PrintButton from './PrintButton';
 
 function formatCurrency(value) {
@@ -17,7 +18,6 @@ export default function Dashboard({ data, fundResearch, onReset }) {
   const [activeOwner, setActiveOwner] = useState('All');
   const owners = ['All', ...(data.owners || [])];
 
-  // Filter assets by owner
   function filterByOwner(assetClasses) {
     if (activeOwner === 'All') return assetClasses;
     return assetClasses
@@ -36,9 +36,6 @@ export default function Dashboard({ data, fundResearch, onReset }) {
   }
 
   const filteredClasses = filterByOwner(data.assetClasses || []);
-  const hasFlags =
-    (data.planningFlags && data.planningFlags.length > 0) ||
-    filteredClasses.some((g) => g.concentrationFlag !== 'none');
 
   const today = new Date().toLocaleDateString('en-CA', {
     year: 'numeric',
@@ -86,20 +83,6 @@ export default function Dashboard({ data, fundResearch, onReset }) {
           <div className="h-px bg-ig-dark/10 mt-3" />
         </div>
 
-        {/* Alert bar */}
-        {hasFlags && (
-          <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-ig-amber/30">
-            <p className="text-xs font-semibold text-ig-amber uppercase tracking-wide mb-1">
-              Planning alerts
-            </p>
-            <ul className="text-sm text-ig-dark space-y-0.5">
-              {(data.planningFlags || []).map((flag, i) => (
-                <li key={i}>{flag}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
         {/* Owner filter */}
         <div className="no-print flex gap-2 mb-5 flex-wrap">
           {owners.map((owner) => (
@@ -119,7 +102,7 @@ export default function Dashboard({ data, fundResearch, onReset }) {
 
         {/* Two-column layout */}
         <div className="dashboard-grid grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
-          {/* Left column — asset breakdown */}
+          {/* Left column — account breakdown */}
           <div className="space-y-3">
             {filteredClasses.length > 0 ? (
               filteredClasses.map((group, i) => (
@@ -164,8 +147,11 @@ export default function Dashboard({ data, fundResearch, onReset }) {
             )}
           </div>
 
-          {/* Right column — summary panel */}
-          <SummaryPanel data={data} filteredClasses={filteredClasses} />
+          {/* Right column — exposure view + summary */}
+          <div className="space-y-4">
+            <ExposurePanel data={data} fundResearch={fundResearch} />
+            <SummaryPanel data={data} />
+          </div>
         </div>
 
         {/* Footer */}
@@ -175,7 +161,7 @@ export default function Dashboard({ data, fundResearch, onReset }) {
             {today}
           </p>
           <p className="mt-0.5 italic">
-            For advisor use only. Verify before client distribution.
+            For discussion purposes only. Verify all data before client distribution.
           </p>
         </div>
       </div>

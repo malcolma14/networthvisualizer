@@ -28,15 +28,8 @@ export default function AssetGroup({ group, grossAssets, fundResearch }) {
   const color = CLASS_COLORS[group.name] || CLASS_COLORS['Other'];
   const pct = grossAssets > 0 ? ((group.totalValue / grossAssets) * 100).toFixed(1) : '0.0';
 
-  const flagBorder =
-    group.concentrationFlag === 'high'
-      ? 'border-l-ig-red'
-      : group.concentrationFlag === 'moderate'
-      ? 'border-l-ig-amber'
-      : 'border-l-transparent';
-
   return (
-    <div className={`bg-white rounded-xl border border-ig-grey/10 overflow-hidden print-break-avoid border-l-4 ${flagBorder}`}>
+    <div className="bg-white rounded-xl border border-ig-grey/10 overflow-hidden print-break-avoid">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full px-5 py-3 flex items-center justify-between hover:bg-ig-pale/50 transition-colors"
@@ -44,16 +37,6 @@ export default function AssetGroup({ group, grossAssets, fundResearch }) {
         <div className="flex items-center gap-3">
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
           <h3 className="font-bold text-ig-dark text-sm">{group.name}</h3>
-          {group.concentrationFlag === 'high' && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-ig-red/10 text-ig-red font-semibold">
-              🔴 High
-            </span>
-          )}
-          {group.concentrationFlag === 'moderate' && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-ig-amber/10 text-ig-amber font-semibold">
-              🟡 Moderate
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm font-semibold text-ig-dark">
