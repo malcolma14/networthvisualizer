@@ -7,6 +7,7 @@ import {
 } from './promptBuilder.js';
 import { parseCSVData } from './csvParser.js';
 import { classifyAndFlag } from './assetClassifier.js';
+import FUND_LIBRARY from './fundLibrary.json';
 
 const API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY;
 
@@ -59,7 +60,19 @@ function buildSearchStrategy(code) {
 }
 
 async function researchSingleFund(code, onStatus) {
-  onStatus?.(`Researching ${code}…`);
+  // Check static fund library first — no API call needed
+  const staticEntry = FUND_LIBRARY[code] || FUND_LIBRARY[code.toUpperCase()];
+  if (staticEntry && staticEntry.code) {
+    onStatus?.(`${code} — found in fund library ✓`);
+    return {
+      ...staticEntry,
+      verified: true,
+      confidence: 'High',
+    };
+  }
+
+  // Not in static library — fall through to web search
+  onStatus?.(`Researching ${code} via web search…`);
   const searchStrategy = buildSearchStrategy(code);
 
   // ─── Phase 1: Identify the fund ───
