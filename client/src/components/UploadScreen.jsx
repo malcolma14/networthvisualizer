@@ -2,20 +2,15 @@ import { useState, useCallback } from 'react';
 import Papa from 'papaparse';
 import { analyseCSV } from '../lib/claude';
 
-const STATUS_MESSAGES = [
-  'Reading the statement…',
-  'Parsing accounts and holdings…',
-  'Researching holdings via web search…',
-  'Analyzing asset allocation…',
-  'Preparing questions…',
-];
-
 // Steps: 'upload' → 'post-upload' → 'family-setup' → done
 export default function UploadScreen({ onComplete, onFamilyTreeComplete }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [statusIndex, setStatusIndex] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+
+  // Real-time status log
+  const [statusLog, setStatusLog] = useState([]); // [{text, done}]
+  const [currentStatus, setCurrentStatus] = useState('');
 
   // Multi-member state
   const [profiles, setProfiles] = useState([]); // [{name, analysisData, fundResearch}]
@@ -30,11 +25,8 @@ export default function UploadScreen({ onComplete, onFamilyTreeComplete }) {
   const processFile = useCallback(async (file) => {
     setLoading(true);
     setError(null);
-    setStatusIndex(0);
-
-    const interval = setInterval(() => {
-      setStatusIndex((prev) => Math.min(prev + 1, STATUS_MESSAGES.length - 1));
-    }, 3000);
+    setStatusLog([]);
+    setCurrentStatus('Reading the statement…');
 
     try {
       const text = await readFileAsText(file);
@@ -48,12 +40,32 @@ export default function UploadScreen({ onComplete, onFamilyTreeComplete }) {
         throw new Error('The CSV file appears to be empty or could not be parsed.');
       }
 
+      setStatusLog((prev) => [...prev, { text: 'CSV parsed', done: true }]);
+
       const analysis = await analyseCSV(result.data, (msg) => {
-        const idx = STATUS_MESSAGES.findIndex((m) => m === msg);
-        if (idx >= 0) setStatusIndex(idx);
-        if (msg?.startsWith('Researching holdings')) setStatusIndex(2);
+        if (!msg) return;
+        // Fund-specific messages from sequential research
+        if (msg.startsWith('Researching ') && !msg.includes('via web search')) {
+          setCurrentStatus(msg);
+        } else if (msg.includes('— done') || msg.includes('— verified') || msg.includes('— not found') || msg.includes('— error')) {
+          // A fund completed — move to log
+          const fundLabel = msg.replace('…', '').replace('— done', '').trim();
+          const isVerified = msg.includes('verified');
+          const isMissing = msg.includes('no allocation');
+          const statusText = isVerified
+            ? (isMissing ? `${fundLabel} — verified (no allocation data)` : `${fundLabel} — verified`)
+            : msg.includes('not found') ? `${fundLabel} — not found` : `${fundLabel} — error`;
+          setStatusLog((prev) => [...prev, { text: statusText, done: true, verified: isVerified }]);
+        } else if (msg.includes('holdings')) {
+          setCurrentStatus(msg);
+        } else {
+          // General status like "Analyzing asset allocation…"
+          setCurrentStatus(msg);
+          if (msg.includes('Parsing')) {
+            // Already logged above
+          }
+        }
       });
-      clearInterval(interval);
 
       if (profiles.length === 0 && step === 'upload') {
         // First file — store pending and ask what to do next
@@ -69,7 +81,6 @@ export default function UploadScreen({ onComplete, onFamilyTreeComplete }) {
         setLoading(false);
       }
     } catch (err) {
-      clearInterval(interval);
       setError(err.message || 'Something went wrong. Please try again.');
       setLoading(false);
     }
@@ -370,26 +381,33 @@ export default function UploadScreen({ onComplete, onFamilyTreeComplete }) {
             )}
           </>
         ) : (
-          /* Loading state */
-          <div className="text-center py-12">
-            <div className="inline-block w-10 h-10 border-3 border-ig-mid border-t-transparent rounded-full animate-spin mb-6"
-                 style={{ borderWidth: '3px' }} />
-            <p className="text-ig-dark font-semibold text-lg mb-2">
-              {STATUS_MESSAGES[statusIndex]}
+          /* Loading state — real-time progress log */
+          <div className="py-8 px-4">
+            {/* Completed steps */}
+            {statusLog.length > 0 && (
+              <div className="mb-4 space-y-1.5">
+                {statusLog.map((entry, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs text-ig-grey">
+                    <span className={entry.verified !== false ? 'text-ig-green' : 'text-ig-amber'}>
+                      {entry.verified !== false ? '✓' : '⚠'}
+                    </span>
+                    <span>{entry.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Current in-progress step */}
+            {currentStatus && (
+              <div className="flex items-center gap-3 py-3">
+                <div className="w-4 h-4 border-2 border-ig-mid border-t-transparent rounded-full animate-spin shrink-0" />
+                <p className="text-ig-dark font-semibold text-sm">{currentStatus}</p>
+              </div>
+            )}
+
+            <p className="mt-4 text-ig-grey text-xs text-center">
+              This may take a minute — we're looking up each holding individually.
             </p>
-            <p className="text-ig-grey text-sm">
-              This may take a minute — we're looking up your client's holdings.
-            </p>
-            <div className="mt-6 flex justify-center gap-1.5">
-              {STATUS_MESSAGES.map((_, i) => (
-                <div
-                  key={i}
-                  className={`w-2 h-2 rounded-full transition-colors ${
-                    i <= statusIndex ? 'bg-ig-mid' : 'bg-ig-grey/30'
-                  }`}
-                />
-              ))}
-            </div>
           </div>
         )}
       </div>

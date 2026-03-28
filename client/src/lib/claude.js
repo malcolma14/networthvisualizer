@@ -58,10 +58,12 @@ function buildSearchStrategy(code) {
   Secondary search: "${code} fund facts sheet Canada SEDAR"`;
 }
 
-async function researchSingleFund(code) {
+async function researchSingleFund(code, onStatus) {
+  onStatus?.(`Researching ${code}…`);
   const searchStrategy = buildSearchStrategy(code);
 
-  const systemPrompt = `You are a Canadian investment fund research assistant. Use the web_search tool to look up fund code "${code}".
+  // ─── Phase 1: Identify the fund ───
+  const phase1Prompt = `You are a Canadian investment fund research assistant. Use the web_search tool to look up fund code "${code}".
 
 SEARCH STRATEGY — follow this order:
 ${searchStrategy}
@@ -78,69 +80,131 @@ Return a JSON object with these fields:
 - mer: MER as a number e.g. 1.25 (null if unknown)
 - distributionYield: Trailing 12-month yield as a number (null if unknown)
 - distributionFrequency: "Monthly", "Quarterly", "Annually", or null
-- assetAllocation: Array of {name, percent} using these standard names ONLY: "Canadian equity", "US equity", "International equity", "Global equity", "Fixed income", "Cash & equivalents", "Real estate — listed", "Private alternatives", "Other"
-- geographicAllocation: Array of {name, percent} using these standard names ONLY: "Canada", "United States", "Europe", "Japan", "Asia ex-Japan", "Other/EM"
 - dataAsAt: Date of data if known, else null
 - confidence: "High", "Medium", or "Low"
 
 CONFIDENCE RULES:
 - "High": You found the exact fund page and extracted detailed data
-- "Medium": You identified the fund name and CIFSC category but could not get full allocation tables. This is STILL VALID — set verified fields.
+- "Medium": You identified the fund name and CIFSC category but could not get full allocation tables. This is STILL VALID.
 - "Low": You could not confidently identify the fund at all — set fullName to null
 
 CRITICAL:
 - NEVER guess a name with High confidence — better to say Medium or Low than be wrong
-- A fund identified by name + CIFSC category (even without full allocation data) should be "Medium" confidence, NOT "Low"
 - Respond with JSON only — no markdown fences, no explanation`;
 
   try {
-    const response = await client.messages.create({
+    const phase1Response = await client.messages.create({
       model: FUND_RESEARCH_MODEL,
       max_tokens: 1200,
-      system: systemPrompt,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
-      messages: [{ role: 'user', content: `Look up fund code "${code}" and return the JSON object.` }],
+      system: phase1Prompt,
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+      messages: [{ role: 'user', content: `Identify fund code "${code}" and return the JSON object.` }],
     });
 
-    const textBlock = response.content.filter((b) => b.type === 'text').pop();
-    const text = textBlock?.text || '';
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    const phase1Text = phase1Response.content.filter((b) => b.type === 'text').pop()?.text || '';
+    const phase1Match = phase1Text.match(/\{[\s\S]*\}/);
+    if (!phase1Match) {
+      onStatus?.(`${code} — not found`);
       return { code, verified: false, fullName: null, confidence: 'Low' };
     }
 
-    const result = JSON.parse(jsonMatch[0]);
-    const isVerified = (result.confidence === 'High' || result.confidence === 'Medium') && result.fullName;
+    const phase1 = JSON.parse(phase1Match[0]);
+    const isVerified = (phase1.confidence === 'High' || phase1.confidence === 'Medium') && phase1.fullName;
+
+    if (!isVerified) {
+      onStatus?.(`${code} — not found`);
+      return {
+        code, verified: false, fullName: null,
+        fundCompany: null, cifscCategory: phase1.cifscCategory || null,
+        benchmarkIndex: null, riskRating: null,
+        mer: null, distributionYield: null, distributionFrequency: null,
+        assetAllocation: [], geographicAllocation: [],
+        dataAsAt: null, confidence: 'Low', allocationMissing: true,
+      };
+    }
+
+    // ─── Phase 2: Get holdings/allocation data ───
+    onStatus?.(`Researching ${code} holdings…`);
+    const fullName = phase1.fullName;
+    const fundCompany = phase1.fundCompany || '';
+
+    const phase2Prompt = `You are a Canadian investment fund research assistant. You have already identified the fund:
+- Code: "${code}"
+- Name: "${fullName}"
+- Company: "${fundCompany}"
+
+Now use the web_search tool to find the PORTFOLIO HOLDINGS and ASSET ALLOCATION data for this fund. Search specifically for the portfolio breakdown, NOT just the fund summary page.
+
+Search queries to try in order:
+1. "${fullName} portfolio holdings ${new Date().getFullYear()}"
+2. "${fullName} fund facts asset allocation"
+3. "${code} ${fundCompany} portfolio top holdings"
+
+From whatever you find, extract:
+- assetAllocation: Array of {name, percent} using these standard names ONLY: "Canadian equity", "US equity", "International equity", "Global equity", "Fixed income", "Cash & equivalents", "Real estate — listed", "Private alternatives", "Other"
+- geographicAllocation: Array of {name, percent} using these standard names ONLY: "Canada", "United States", "Europe", "Japan", "Asia ex-Japan", "Other/EM"
+
+If you cannot find specific allocation data, return empty arrays.
+Return JSON only with fields: assetAllocation, geographicAllocation`;
+
+    let assetAllocation = [];
+    let geographicAllocation = [];
+
+    try {
+      const phase2Response = await client.messages.create({
+        model: FUND_RESEARCH_MODEL,
+        max_tokens: 1200,
+        system: phase2Prompt,
+        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }],
+        messages: [{ role: 'user', content: `Find the portfolio holdings breakdown for "${fullName}" (${code}).` }],
+      });
+
+      const phase2Text = phase2Response.content.filter((b) => b.type === 'text').pop()?.text || '';
+      const phase2Match = phase2Text.match(/\{[\s\S]*\}/);
+      if (phase2Match) {
+        const phase2 = JSON.parse(phase2Match[0]);
+        assetAllocation = phase2.assetAllocation || [];
+        geographicAllocation = phase2.geographicAllocation || [];
+      }
+    } catch (err) {
+      console.error(`Phase 2 failed for ${code}:`, err.message);
+    }
+
+    const allocationMissing = assetAllocation.length === 0 && geographicAllocation.length === 0;
+    const statusLabel = allocationMissing ? `${code} — verified (no allocation data)` : `${code} — verified`;
+    onStatus?.(statusLabel);
 
     return {
       code,
-      verified: !!isVerified,
-      fullName: isVerified ? result.fullName : null,
-      fundCompany: isVerified ? result.fundCompany : null,
-      cifscCategory: isVerified ? result.cifscCategory : (result.cifscCategory || null),
-      benchmarkIndex: result.benchmarkIndex || null,
-      riskRating: result.riskRating || null,
-      mer: result.mer ?? null,
-      distributionYield: result.distributionYield ?? null,
-      distributionFrequency: result.distributionFrequency ?? null,
-      assetAllocation: result.assetAllocation || [],
-      geographicAllocation: result.geographicAllocation || [],
-      dataAsAt: result.dataAsAt || null,
-      confidence: result.confidence || 'Low',
+      verified: true,
+      fullName: phase1.fullName,
+      fundCompany: phase1.fundCompany || null,
+      cifscCategory: phase1.cifscCategory || null,
+      benchmarkIndex: phase1.benchmarkIndex || null,
+      riskRating: phase1.riskRating || null,
+      mer: phase1.mer ?? null,
+      distributionYield: phase1.distributionYield ?? null,
+      distributionFrequency: phase1.distributionFrequency ?? null,
+      assetAllocation,
+      geographicAllocation,
+      dataAsAt: phase1.dataAsAt || null,
+      confidence: phase1.confidence || 'Medium',
+      allocationMissing,
     };
   } catch (err) {
     console.error(`Fund research failed for ${code}:`, err.message);
+    onStatus?.(`${code} — error`);
     return { code, verified: false, fullName: null, confidence: 'Low' };
   }
 }
 
-async function researchFunds(fundCodes) {
+async function researchFunds(fundCodes, onStatus) {
   if (fundCodes.length === 0) return {};
 
-  const results = await Promise.all(fundCodes.map((code) => researchSingleFund(code)));
-
+  // Run sequentially so status messages are readable one at a time
   const fundResults = {};
-  for (const result of results) {
+  for (const code of fundCodes) {
+    const result = await researchSingleFund(code, onStatus);
     fundResults[result.code] = result;
   }
   return fundResults;
@@ -155,12 +219,12 @@ export async function analyseCSV(csvData, onStatus) {
 
   // Research fund codes via Claude web search
   onStatus?.('Researching holdings via web search…');
-  const fundResults = await researchFunds(classification.fundCodes);
+  const fundResults = await researchFunds(classification.fundCodes, onStatus);
 
-  // Identify unverified funds to add as clarifying questions later
-  const unverifiedFunds = Object.entries(fundResults)
-    .filter(([, r]) => !r.verified)
-    .map(([code]) => code);
+  // Identify funds needing clarifying questions
+  const questionableFunds = Object.entries(fundResults)
+    .filter(([, r]) => !r.verified || r.allocationMissing)
+    .map(([code, r]) => ({ code, verified: r.verified, allocationMissing: r.allocationMissing, fullName: r.fullName }));
 
   // Full analysis via Claude
   onStatus?.('Analyzing asset allocation…');
@@ -191,11 +255,11 @@ export async function analyseCSV(csvData, onStatus) {
     }
   }
 
-  // Add clarifying questions for unverified funds
+  // Add clarifying questions for unverified or allocation-missing funds
   if (!analysisResult.clarifyingQuestions) analysisResult.clarifyingQuestions = [];
-  for (const code of unverifiedFunds) {
-    // Mark the holding with unverifiedBadge
-    if (analysisResult.assetClasses) {
+  for (const { code, verified, allocationMissing, fullName } of questionableFunds) {
+    // Mark the holding with unverifiedBadge if not verified
+    if (!verified && analysisResult.assetClasses) {
       for (const assetClass of analysisResult.assetClasses) {
         for (const asset of assetClass.assets || []) {
           for (const holding of asset.holdings || []) {
@@ -207,10 +271,18 @@ export async function analyseCSV(csvData, onStatus) {
       }
     }
 
+    const question = !verified
+      ? `Fund code "${code}" couldn't be identified. Please upload the fund fact sheet PDF or paste the fund page URL.`
+      : `Fund "${fullName}" (${code}) was identified but we couldn't find its underlying holdings breakdown. Please upload the fund fact sheet PDF so we can show the correct asset allocation.`;
+
+    const context = !verified
+      ? `Fund code ${code} could not be matched to a known fund with high confidence.`
+      : `Fund ${code} was verified as "${fullName}" but detailed allocation data is missing.`;
+
     analysisResult.clarifyingQuestions.push({
       id: `fund_${code}`,
-      question: `I couldn't verify fund code "${code}" via web search. Can you confirm what this fund holds? You can paste a public URL to the fund fact sheet or describe it.`,
-      context: `Fund code ${code} could not be matched to a known fund with high confidence.`,
+      question,
+      context,
       relatedAssetId: null,
       type: 'fund_confirm',
     });

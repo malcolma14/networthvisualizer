@@ -105,6 +105,7 @@ function BarRow({ name, value, percent, color, indent }) {
 export default function ExposurePanel({ data, fundResearch, activeOwner = 'All' }) {
   const [activeTab, setActiveTab] = useState('asset');
   const [expandedGroup, setExpandedGroup] = useState(null);
+  const [drillDownView, setDrillDownView] = useState('fund'); // 'fund' | 'asset'
 
   useEffect(() => { setExpandedGroup(null); }, [activeOwner]);
 
@@ -113,16 +114,35 @@ export default function ExposurePanel({ data, fundResearch, activeOwner = 'All' 
 
   const donutSlices = broadGroups.map((g) => ({ name: g.name, percent: g.percent, color: g.color }));
 
+  // When drilling down, recalculate percentages relative to the parent group total
   const activeSlices = expandedGroup
-    ? (broadGroups.find(g => g.name === expandedGroup)?.children ?? []).map(child => ({
-        name: child.name,
-        percent: child.percent,
-        color: SUB_COLORS[child.name] || '#BCBCBC',
-      }))
+    ? (() => {
+        const group = broadGroups.find(g => g.name === expandedGroup);
+        if (!group) return donutSlices;
+        if (drillDownView === 'fund' && group.funds && group.funds.length > 0) {
+          // Fund-level slices
+          const groupTotal = group.value;
+          const FUND_COLORS = ['#001E60', '#0072CE', '#8DD0EF', '#00966C', '#ED8B00', '#D4A843', '#7A99AC', '#5B2C6F', '#A8C4D4', '#BCBCBC'];
+          return group.funds.map((fund, i) => ({
+            name: fund.name,
+            percent: groupTotal > 0 ? (fund.value / groupTotal) * 100 : 0,
+            color: FUND_COLORS[i % FUND_COLORS.length],
+            value: fund.value,
+          }));
+        }
+        // Asset class sub-type slices
+        const groupTotal = group.value;
+        return (group.children ?? []).map(child => ({
+          name: child.name,
+          percent: groupTotal > 0 ? (child.value / groupTotal) * 100 : 0,
+          color: SUB_COLORS[child.name] || '#BCBCBC',
+          value: child.value,
+        }));
+      })()
     : donutSlices;
 
   const donutLabel = expandedGroup
-    ? [expandedGroup.length > 10 ? expandedGroup.slice(0, 10) + '…' : expandedGroup, 'breakdown']
+    ? [expandedGroup.length > 12 ? expandedGroup.slice(0, 12) + '…' : expandedGroup, 'breakdown']
     : null;
 
   function handleSliceClick(name) {
@@ -199,27 +219,65 @@ export default function ExposurePanel({ data, fundResearch, activeOwner = 'All' 
             <div className="space-y-0.5">
               {broadGroups.map((group) => {
                 const isExpanded = expandedGroup === group.name;
-                const hasChildren = group.children.length > 1;
+                const hasFunds = group.funds && group.funds.length > 0;
+                const hasAssetChildren = group.children.length > 1;
+                const canExpand = hasFunds || hasAssetChildren;
+                const groupTotal = group.value;
+                const FUND_COLORS = ['#001E60', '#0072CE', '#8DD0EF', '#00966C', '#ED8B00', '#D4A843', '#7A99AC', '#5B2C6F', '#A8C4D4', '#BCBCBC'];
                 return (
                   <div key={group.name}>
                     <button
-                      onClick={() => hasChildren && handleSliceClick(group.name)}
-                      className={`w-full ${hasChildren ? 'cursor-pointer' : 'cursor-default'}`}
+                      onClick={() => canExpand && handleSliceClick(group.name)}
+                      className={`w-full ${canExpand ? 'cursor-pointer' : 'cursor-default'}`}
                     >
                       <BarRow name={group.name} value={group.value} percent={group.percent} color={group.color} />
                     </button>
-                    {isExpanded && hasChildren && (
+                    {isExpanded && canExpand && (
                       <div className="mb-2">
-                        {group.children.map((child) => (
-                          <BarRow
-                            key={child.name}
-                            name={child.name}
-                            value={child.value}
-                            percent={child.percent}
-                            color={SUB_COLORS[child.name] || '#BCBCBC'}
-                            indent
-                          />
-                        ))}
+                        {/* Toggle between fund and asset class views */}
+                        {hasFunds && hasAssetChildren && (
+                          <div className="flex gap-1 px-6 py-1.5 mb-1">
+                            <button
+                              onClick={() => setDrillDownView('fund')}
+                              className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition-colors ${
+                                drillDownView === 'fund' ? 'bg-ig-mid text-white' : 'bg-ig-pale text-ig-grey hover:text-ig-dark'
+                              }`}
+                            >
+                              By fund
+                            </button>
+                            <button
+                              onClick={() => setDrillDownView('asset')}
+                              className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition-colors ${
+                                drillDownView === 'asset' ? 'bg-ig-mid text-white' : 'bg-ig-pale text-ig-grey hover:text-ig-dark'
+                              }`}
+                            >
+                              By asset class
+                            </button>
+                          </div>
+                        )}
+                        {drillDownView === 'fund' && hasFunds ? (
+                          group.funds.map((fund, i) => (
+                            <BarRow
+                              key={fund.code || fund.name}
+                              name={fund.name}
+                              value={fund.value}
+                              percent={groupTotal > 0 ? (fund.value / groupTotal) * 100 : 0}
+                              color={FUND_COLORS[i % FUND_COLORS.length]}
+                              indent
+                            />
+                          ))
+                        ) : (
+                          group.children.map((child) => (
+                            <BarRow
+                              key={child.name}
+                              name={child.name}
+                              value={child.value}
+                              percent={groupTotal > 0 ? (child.value / groupTotal) * 100 : 0}
+                              color={SUB_COLORS[child.name] || '#BCBCBC'}
+                              indent
+                            />
+                          ))
+                        )}
                       </div>
                     )}
                   </div>

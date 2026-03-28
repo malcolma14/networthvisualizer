@@ -68,6 +68,23 @@ export function calculateExposure(analysisData, fundResearch, activeOwner = 'All
   let unverifiedValue = 0;
   const unverifiedHoldings = [];
 
+  // fundsByBroadGroup tracks individual fund holdings per broad group for drill-down
+  const fundsByBroadGroup = {};
+  for (const gName of Object.keys(BROAD_GROUPS)) fundsByBroadGroup[gName] = {};
+
+  function addFundToBroadGroupByBucket(bucketName, code, name, dollarValue) {
+    if (!code) return;
+    for (const [gName, def] of Object.entries(BROAD_GROUPS)) {
+      if (def.children.includes(bucketName)) {
+        if (!fundsByBroadGroup[gName][code]) {
+          fundsByBroadGroup[gName][code] = { code, name: name || code, value: 0 };
+        }
+        fundsByBroadGroup[gName][code].value += dollarValue;
+        break;
+      }
+    }
+  }
+
   for (const cls of ASSET_CLASS_ORDER) assetBuckets[cls] = { name: cls, value: 0, sources: [] };
   for (const geo of GEO_ORDER) geoBuckets[geo] = { name: geo, value: 0 };
 
@@ -146,6 +163,7 @@ export function calculateExposure(analysisData, fundResearch, activeOwner = 'All
             const dollarValue = (alloc.percent / 100) * holdingValue;
             if (!assetBuckets[bucket]) assetBuckets[bucket] = { name: bucket, value: 0, sources: [] };
             assetBuckets[bucket].value += dollarValue;
+            addFundToBroadGroupByBucket(bucket, code, research.fullName || code, dollarValue);
             if (code && !assetBuckets[bucket].sources.some((s) => s.code === code && s.sleeve === alloc.name)) {
               assetBuckets[bucket].sources.push({ code, sleeve: alloc.name, pct: alloc.percent });
             }
@@ -168,6 +186,7 @@ export function calculateExposure(analysisData, fundResearch, activeOwner = 'All
           const bucket = mapAssetClass(research.cifscCategory);
           if (!assetBuckets[bucket]) assetBuckets[bucket] = { name: bucket, value: 0, sources: [] };
           assetBuckets[bucket].value += holdingValue;
+          addFundToBroadGroupByBucket(bucket, code, research.fullName || code, holdingValue);
           assetBuckets[bucket].sources.push({ code, sleeve: research.cifscCategory, pct: 100 });
 
           if (code && !sources.find((s) => s.code === code)) {
@@ -179,6 +198,7 @@ export function calculateExposure(analysisData, fundResearch, activeOwner = 'All
           const bucket = mapAssetClass(research.cifscCategory);
           if (!assetBuckets[bucket]) assetBuckets[bucket] = { name: bucket, value: 0, sources: [] };
           assetBuckets[bucket].value += holdingValue;
+          addFundToBroadGroupByBucket(bucket, code, research.fullName || code, holdingValue);
           assetBuckets[bucket].sources.push({ code, sleeve: research.cifscCategory, pct: 100 });
           if (code && !sources.find((s) => s.code === code)) {
             sources.push({ code, dataAsAt: research.dataAsAt || null, verified: false });
@@ -270,12 +290,19 @@ export function calculateExposure(analysisData, fundResearch, activeOwner = 'All
         .filter(Boolean);
       const totalValue = children.reduce((sum, c) => sum + c.value, 0);
       if (totalValue <= 0) return null;
+      // Collect individual fund holdings for this broad group
+      const fundsMap = fundsByBroadGroup[groupName] || {};
+      const funds = Object.values(fundsMap)
+        .filter((f) => f.value > 0)
+        .sort((a, b) => b.value - a.value);
+
       return {
         name: groupName,
         value: totalValue,
         percent: (totalValue / grossAssets) * 100,
         color: def.color,
         children,
+        funds,
       };
     })
     .filter(Boolean);
