@@ -44,8 +44,11 @@ export default function UploadScreen({ onComplete, onFamilyTreeComplete }) {
 
       const analysis = await analyseCSV(result.data, (msg) => {
         if (!msg) return;
+        // Fund library hits — immediate completion
+        if (msg.includes('fund library')) {
+          setStatusLog((prev) => [...prev, { text: msg, done: true, verified: true, fromLibrary: true }]);
         // Fund-specific messages from sequential research
-        if (msg.startsWith('Researching ') && !msg.includes('via web search')) {
+        } else if (msg.startsWith('Researching ') && !msg.includes('via web search')) {
           setCurrentStatus(msg);
         } else if (msg.includes('— done') || msg.includes('— verified') || msg.includes('— not found') || msg.includes('— error')) {
           // A fund completed — move to log
@@ -388,10 +391,10 @@ export default function UploadScreen({ onComplete, onFamilyTreeComplete }) {
               <div className="mb-4 space-y-1.5">
                 {statusLog.map((entry, i) => (
                   <div key={i} className="flex items-center gap-2 text-xs text-ig-grey">
-                    <span className={entry.verified !== false ? 'text-ig-green' : 'text-ig-amber'}>
+                    <span className={entry.fromLibrary ? 'text-ig-mid' : entry.verified !== false ? 'text-ig-green' : 'text-ig-amber'}>
                       {entry.verified !== false ? '✓' : '⚠'}
                     </span>
-                    <span>{entry.text}</span>
+                    <span className={entry.fromLibrary ? 'text-ig-mid' : ''}>{entry.text}</span>
                   </div>
                 ))}
               </div>
