@@ -8,16 +8,20 @@ import {
 import { parseCSVData } from './csvParser.js';
 import { classifyAndFlag } from './assetClassifier.js';
 
+const API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY;
+
+if (!API_KEY) {
+  throw new Error(
+    'VITE_ANTHROPIC_API_KEY is not set. Add it as a GitHub Actions secret and redeploy.'
+  );
+}
+
 let client = null;
 
 export function initClient() {
-  const key = import.meta.env.VITE_ANTHROPIC_API_KEY;
-  if (!key) {
-    throw new Error('Missing VITE_ANTHROPIC_API_KEY environment variable');
-  }
   if (!client) {
     client = new Anthropic({
-      apiKey: key,
+      apiKey: API_KEY,
       dangerouslyAllowBrowser: true,
     });
   }
