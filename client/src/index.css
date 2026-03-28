@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+@media print {
+  @page {
+    size: letter landscape;
+    margin: 0.4in;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    font-size: 9px;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-break-avoid {
+    break-inside: avoid;
+  }
+
+  .dashboard-container {
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  .dashboard-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 340px !important;
+    gap: 16px !important;
+  }
+
+  .asset-group-content {
+    max-height: none !important;
+  }
+
+  /* Scale down to fit */
+  #dashboard-print-area {
+    transform-origin: top left;
+    width: 100%;
+  }
+}
