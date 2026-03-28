@@ -97,7 +97,7 @@ export default function Dashboard({ data, fundResearch, onReset }) {
         {/* Two-column layout: Exposure (left, dominant) | Account details (right, compact) */}
         <div className="dashboard-grid grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
           {/* LEFT — Wealth allocation, exposure, distributions, fees */}
-          <ExposurePanel data={data} fundResearch={fundResearch} />
+          <ExposurePanel data={data} fundResearch={fundResearch} activeOwner={activeOwner} />
 
           {/* RIGHT — Account details + net worth summary */}
           <div className="space-y-3">

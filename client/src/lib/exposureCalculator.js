@@ -56,10 +56,7 @@ function parseRentalIncome(notes) {
   };
 }
 
-export function calculateExposure(analysisData, fundResearch) {
-  const grossAssets = analysisData.grossAssets || 0;
-  if (grossAssets <= 0) return { assetClasses: [], broadGroups: [], geographies: [], summaryChips: [], sources: [], distributions: { total: 0, holdings: [] }, fees: { total: 0, weightedMER: 0, holdings: [] } };
-
+export function calculateExposure(analysisData, fundResearch, activeOwner = 'All') {
   const assetBuckets = {};
   const geoBuckets = {};
   const sources = [];
@@ -73,8 +70,31 @@ export function calculateExposure(analysisData, fundResearch) {
   for (const geo of GEO_ORDER) geoBuckets[geo] = { name: geo, value: 0 };
 
   const assetClasses = analysisData.assetClasses || [];
+
+  // Calculate grossAssets from the filtered set so percentages are correct per-owner
+  let grossAssets = 0;
   for (const group of assetClasses) {
-    for (const asset of group.assets || []) {
+    const assets = (group.assets || []).filter(asset =>
+      activeOwner === 'All' ||
+      asset.owner === activeOwner ||
+      asset.owner === 'Joint' ||
+      asset.owner?.toLowerCase() === activeOwner.toLowerCase()
+    );
+    for (const asset of assets) {
+      grossAssets += asset.value || 0;
+    }
+  }
+
+  if (grossAssets <= 0) return { assetClasses: [], broadGroups: [], geographies: [], summaryChips: [], sources: [], distributions: { total: 0, holdings: [] }, fees: { total: 0, weightedMER: 0, holdings: [] } };
+
+  for (const group of assetClasses) {
+    const filteredAssets = (group.assets || []).filter(asset =>
+      activeOwner === 'All' ||
+      asset.owner === activeOwner ||
+      asset.owner === 'Joint' ||
+      asset.owner?.toLowerCase() === activeOwner.toLowerCase()
+    );
+    for (const asset of filteredAssets) {
       const accountValue = asset.value || 0;
       if (accountValue <= 0) continue;
 
@@ -258,6 +278,7 @@ export function calculateExposure(analysisData, fundResearch) {
   const weightedMER = totalFeeableAssets > 0 ? (totalFees / totalFeeableAssets) * 100 : 0;
 
   return {
+    grossAssets,
     assetClasses: assetClassList,
     broadGroups: broadGroupList,
     geographies: geoList,

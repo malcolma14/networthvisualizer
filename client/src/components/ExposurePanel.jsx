@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { calculateExposure } from '../lib/exposureCalculator';
 
 function formatCurrency(value) {
@@ -39,7 +39,7 @@ function polarToCartesian(cx, cy, r, deg) {
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
 }
 
-function DonutChart({ slices, size = 220, onSliceClick, activeSlice }) {
+function DonutChart({ slices, size = 220, onSliceClick, activeSlice, label }) {
   const cx = size / 2, cy = size / 2, outerR = size / 2 - 8, innerR = outerR * 0.58;
   let startAngle = 0;
 
@@ -66,11 +66,14 @@ function DonutChart({ slices, size = 220, onSliceClick, activeSlice }) {
     );
   });
 
+  const labelLine1 = label?.[0] || 'Wealth';
+  const labelLine2 = label?.[1] || 'allocation';
+
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="mx-auto">
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="mx-auto transition-all duration-300">
       {paths}
-      <text x={cx} y={cy - 6} textAnchor="middle" className="fill-ig-dark text-[10px] font-semibold">Wealth</text>
-      <text x={cx} y={cy + 8} textAnchor="middle" className="fill-ig-dark text-[10px] font-semibold">allocation</text>
+      <text x={cx} y={cy - 6} textAnchor="middle" className="fill-ig-dark text-[10px] font-semibold">{labelLine1}</text>
+      <text x={cx} y={cy + 8} textAnchor="middle" className="fill-ig-dark text-[10px] font-semibold">{labelLine2}</text>
     </svg>
   );
 }
@@ -99,14 +102,28 @@ function BarRow({ name, value, percent, color, indent }) {
 }
 
 /* ─── Main Panel ─── */
-export default function ExposurePanel({ data, fundResearch }) {
+export default function ExposurePanel({ data, fundResearch, activeOwner = 'All' }) {
   const [activeTab, setActiveTab] = useState('asset');
   const [expandedGroup, setExpandedGroup] = useState(null);
 
-  const exposure = useMemo(() => calculateExposure(data, fundResearch), [data, fundResearch]);
-  const { broadGroups, geographies, summaryChips, sources, distributions, fees } = exposure;
+  useEffect(() => { setExpandedGroup(null); }, [activeOwner]);
+
+  const exposure = useMemo(() => calculateExposure(data, fundResearch, activeOwner), [data, fundResearch, activeOwner]);
+  const { grossAssets, broadGroups, geographies, summaryChips, sources, distributions, fees } = exposure;
 
   const donutSlices = broadGroups.map((g) => ({ name: g.name, percent: g.percent, color: g.color }));
+
+  const activeSlices = expandedGroup
+    ? (broadGroups.find(g => g.name === expandedGroup)?.children ?? []).map(child => ({
+        name: child.name,
+        percent: child.percent,
+        color: SUB_COLORS[child.name] || '#BCBCBC',
+      }))
+    : donutSlices;
+
+  const donutLabel = expandedGroup
+    ? [expandedGroup.length > 10 ? expandedGroup.slice(0, 10) + '…' : expandedGroup, 'breakdown']
+    : null;
 
   function handleSliceClick(name) {
     setExpandedGroup((prev) => (prev === name ? null : name));
@@ -118,7 +135,15 @@ export default function ExposurePanel({ data, fundResearch }) {
       {/* Donut chart card */}
       <div className="bg-white rounded-xl border border-ig-grey/10 p-5 print-break-avoid">
         <h3 className="text-sm font-bold text-ig-dark mb-4">Wealth allocation</h3>
-        <DonutChart slices={donutSlices} onSliceClick={handleSliceClick} activeSlice={expandedGroup} />
+        <DonutChart slices={activeSlices} onSliceClick={handleSliceClick} activeSlice={expandedGroup} label={donutLabel} />
+        {expandedGroup && (
+          <button
+            onClick={() => setExpandedGroup(null)}
+            className="block mx-auto mt-2 text-xs text-ig-mid hover:text-ig-dark transition-colors"
+          >
+            ← All asset classes
+          </button>
+        )}
 
         {/* Legend */}
         <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1">
@@ -226,7 +251,7 @@ export default function ExposurePanel({ data, fundResearch }) {
 
       {/* Distributions & Fees */}
       {(distributions.holdings.length > 0 || fees.holdings.length > 0) && (
-        <DistributionsFeesPanel distributions={distributions} fees={fees} grossAssets={data.grossAssets} />
+        <DistributionsFeesPanel distributions={distributions} fees={fees} grossAssets={grossAssets} />
       )}
     </div>
   );
