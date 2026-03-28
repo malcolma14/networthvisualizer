@@ -1,27 +1,35 @@
 import { useState, useEffect } from 'react';
-import { initClient, isClientReady } from './lib/claude';
-import ApiKeyScreen from './components/ApiKeyScreen';
+import { initClient } from './lib/claude';
+import { clearCache as clearFundCache } from './lib/fundLookup';
+import PasswordScreen from './components/PasswordScreen';
 import UploadScreen from './components/UploadScreen';
 import ChatScreen from './components/ChatScreen';
 import Dashboard from './components/Dashboard';
 
-const SCREENS = { API_KEY: 'apiKey', UPLOAD: 'upload', CHAT: 'chat', DASHBOARD: 'dashboard' };
+const SCREENS = { PASSWORD: 'password', UPLOAD: 'upload', CHAT: 'chat', DASHBOARD: 'dashboard' };
 
 export default function App() {
-  const [screen, setScreen] = useState(SCREENS.API_KEY);
+  const [screen, setScreen] = useState(SCREENS.PASSWORD);
   const [analysisData, setAnalysisData] = useState(null);
   const [fundResearch, setFundResearch] = useState({});
 
-  // Restore API key from sessionStorage on mount
+  // Restore auth from sessionStorage on mount
   useEffect(() => {
-    const saved = sessionStorage.getItem('nwd_api_key');
-    if (saved) {
-      initClient(saved);
+    if (sessionStorage.getItem('nwd_auth') === '1') {
+      initClient();
       setScreen(SCREENS.UPLOAD);
     }
+
+    // Clear all client data when the tab/window is closed
+    function handleUnload() {
+      sessionStorage.clear();
+    }
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);
 
-  function handleApiKeyReady() {
+  function handleAuthenticated() {
+    initClient();
     setScreen(SCREENS.UPLOAD);
   }
 
@@ -44,12 +52,13 @@ export default function App() {
     setScreen(SCREENS.UPLOAD);
     setAnalysisData(null);
     setFundResearch({});
+    clearFundCache();
   }
 
   return (
     <div className="min-h-screen">
-      {screen === SCREENS.API_KEY && (
-        <ApiKeyScreen onReady={handleApiKeyReady} />
+      {screen === SCREENS.PASSWORD && (
+        <PasswordScreen onAuthenticated={handleAuthenticated} />
       )}
       {screen === SCREENS.UPLOAD && (
         <UploadScreen onComplete={handleAnalysisComplete} />
