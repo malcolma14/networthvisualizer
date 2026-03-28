@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { submitChat } from '../lib/api';
+import { submitChat } from '../lib/claude';
 
 export default function ChatScreen({ data, onComplete, onSkipAll }) {
   const questions = data.clarifyingQuestions || [];

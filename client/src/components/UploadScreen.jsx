@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import Papa from 'papaparse';
-import { analyseCSV } from '../lib/api';
+import { analyseCSV } from '../lib/claude';
 
 const STATUS_MESSAGES = [
   'Reading the statement…',
@@ -41,8 +41,11 @@ export default function UploadScreen({ onComplete }) {
         throw new Error('The CSV file appears to be empty or could not be parsed.');
       }
 
-      // Send to server
-      const analysis = await analyseCSV(result.data);
+      // Run analysis client-side via Claude
+      const analysis = await analyseCSV(result.data, (msg) => {
+        const idx = STATUS_MESSAGES.findIndex((m) => m === msg);
+        if (idx >= 0) setStatusIndex(idx);
+      });
       clearInterval(interval);
       onComplete(analysis);
     } catch (err) {
