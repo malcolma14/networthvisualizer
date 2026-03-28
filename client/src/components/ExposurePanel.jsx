@@ -126,6 +126,10 @@ export default function ExposurePanel({ data, fundResearch, activeOwner = 'All' 
     : null;
 
   function handleSliceClick(name) {
+    if (expandedGroup) {
+      // Already in drill-down — clicks on child slices do nothing
+      return;
+    }
     setExpandedGroup((prev) => (prev === name ? null : name));
     setActiveTab('asset');
   }
@@ -135,7 +139,7 @@ export default function ExposurePanel({ data, fundResearch, activeOwner = 'All' 
       {/* Donut chart card */}
       <div className="bg-white rounded-xl border border-ig-grey/10 p-5 print-break-avoid">
         <h3 className="text-sm font-bold text-ig-dark mb-4">Wealth allocation</h3>
-        <DonutChart slices={activeSlices} onSliceClick={handleSliceClick} activeSlice={expandedGroup} label={donutLabel} />
+        <DonutChart slices={activeSlices} onSliceClick={handleSliceClick} activeSlice={expandedGroup ? null : expandedGroup} label={donutLabel} />
         {expandedGroup && (
           <button
             onClick={() => setExpandedGroup(null)}

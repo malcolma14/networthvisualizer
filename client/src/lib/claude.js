@@ -33,18 +33,48 @@ export function isClientReady() {
 
 const FUND_RESEARCH_MODEL = 'claude-sonnet-4-20250514';
 
-async function researchSingleFund(code) {
-  const systemPrompt = `You are a Canadian investment fund research assistant. Use the web_search tool to look up fund code "${code}" on FundLibrary.com or other Canadian fund sources.
+function detectFundFamily(code) {
+  const upper = code.toUpperCase();
+  if (upper.startsWith('IGI') || upper.startsWith('IG') || upper.startsWith('IVY')) return 'ig';
+  if (upper.startsWith('DFA')) return 'dfa';
+  return 'other';
+}
 
-Search strategy:
-1. First search: "${code} site:fundlibrary.com"
-2. If that yields nothing useful, search: "${code} fund fact sheet Canada"
+function buildSearchStrategy(code) {
+  const family = detectFundFamily(code);
+  if (family === 'ig') {
+    return `Tier 1 — IG/Investors Group fund detected.
+  Primary search: "${code} site:ig.ca"
+  Secondary search: "${code} IG Wealth Management fund facts"
+  These are PROPRIETARY IG Wealth Management funds — FundLibrary will NOT have them. Do NOT search FundLibrary for IG funds.`;
+  }
+  if (family === 'dfa') {
+    return `Tier 2 — DFA fund detected.
+  Primary search: "${code} site:dimensional.com"
+  Secondary search: "${code} Dimensional Fund Advisors Canada fund facts"`;
+  }
+  return `Tier 3 — Third-party fund (Mackenzie, CI, Fidelity, AGF, etc.).
+  Primary search: "${code} site:fundlibrary.com"
+  Secondary search: "${code} fund facts sheet Canada SEDAR"`;
+}
+
+async function researchSingleFund(code) {
+  const searchStrategy = buildSearchStrategy(code);
+
+  const systemPrompt = `You are a Canadian investment fund research assistant. Use the web_search tool to look up fund code "${code}".
+
+SEARCH STRATEGY — follow this order:
+${searchStrategy}
+
+If the primary search yields nothing useful, try the secondary search. If both fail, try a general search: "${code} fund Canada".
 
 Return a JSON object with these fields:
 - code: "${code}"
 - fullName: Official fund name (null if uncertain)
 - fundCompany: Fund manager/company (null if uncertain)
-- cifscCategory: CIFSC category e.g. "Global Equity" (null if uncertain)
+- cifscCategory: CIFSC category e.g. "Global Equity", "Canadian Equity" (null if uncertain)
+- benchmarkIndex: The fund's benchmark index if found (e.g. "S&P/TSX Composite Index"), null if unknown
+- riskRating: The fund's risk rating string (e.g. "Medium", "Low to Medium"), null if unknown
 - mer: MER as a number e.g. 1.25 (null if unknown)
 - distributionYield: Trailing 12-month yield as a number (null if unknown)
 - distributionFrequency: "Monthly", "Quarterly", "Annually", or null
@@ -53,11 +83,14 @@ Return a JSON object with these fields:
 - dataAsAt: Date of data if known, else null
 - confidence: "High", "Medium", or "Low"
 
+CONFIDENCE RULES:
+- "High": You found the exact fund page and extracted detailed data
+- "Medium": You identified the fund name and CIFSC category but could not get full allocation tables. This is STILL VALID — set verified fields.
+- "Low": You could not confidently identify the fund at all — set fullName to null
+
 CRITICAL:
-- If you cannot confidently identify the fund, set confidence to "Low" and fullName to null
-- NEVER guess a name with high confidence — better to say "Low" than be wrong
-- For IG Wealth Management funds (codes starting with "IGI" or "IG"), these are Investors Group / IG Wealth Management proprietary funds
-- For DFA funds, these are Dimensional Fund Advisors funds available in Canada
+- NEVER guess a name with High confidence — better to say Medium or Low than be wrong
+- A fund identified by name + CIFSC category (even without full allocation data) should be "Medium" confidence, NOT "Low"
 - Respond with JSON only — no markdown fences, no explanation`;
 
   try {
@@ -65,11 +98,10 @@ CRITICAL:
       model: FUND_RESEARCH_MODEL,
       max_tokens: 1200,
       system: systemPrompt,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
       messages: [{ role: 'user', content: `Look up fund code "${code}" and return the JSON object.` }],
     });
 
-    // Extract the final text block from the response
     const textBlock = response.content.filter((b) => b.type === 'text').pop();
     const text = textBlock?.text || '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -85,7 +117,9 @@ CRITICAL:
       verified: !!isVerified,
       fullName: isVerified ? result.fullName : null,
       fundCompany: isVerified ? result.fundCompany : null,
-      cifscCategory: isVerified ? result.cifscCategory : null,
+      cifscCategory: isVerified ? result.cifscCategory : (result.cifscCategory || null),
+      benchmarkIndex: result.benchmarkIndex || null,
+      riskRating: result.riskRating || null,
       mer: result.mer ?? null,
       distributionYield: result.distributionYield ?? null,
       distributionFrequency: result.distributionFrequency ?? null,
@@ -193,10 +227,117 @@ export async function analyseCSV(csvData, onStatus) {
   return { data: analysisResult, fundResearch: fundResults };
 }
 
+async function extractFundDataFromPDF(question, answer) {
+  const content = [
+    {
+      type: 'document',
+      source: {
+        type: 'base64',
+        media_type: answer.pdf.mediaType,
+        data: answer.pdf.base64,
+      },
+    },
+    {
+      type: 'text',
+      text: `This is a fund fact sheet PDF for the question: "${question.question}"
+${answer.text ? 'Advisor note: ' + answer.text : ''}
+
+Extract the following and return as JSON only:
+- code: the fund code if visible
+- fullName: official fund name
+- fundCompany: fund manager/company
+- cifscCategory: CIFSC category
+- benchmarkIndex: benchmark index if shown
+- riskRating: risk rating if shown
+- mer: MER as a number (e.g. 1.25)
+- distributionYield: trailing 12-month yield as a number
+- distributionFrequency: "Monthly", "Quarterly", "Annually", or null
+- assetAllocation: array of {name, percent} using: "Canadian equity", "US equity", "International equity", "Global equity", "Fixed income", "Cash & equivalents", "Real estate — listed", "Private alternatives", "Other"
+- geographicAllocation: array of {name, percent} using: "Canada", "United States", "Europe", "Japan", "Asia ex-Japan", "Other/EM"
+- dataAsAt: date of data if shown
+- confidence: "High" if you can clearly read the data, "Medium" if partially legible
+
+Return JSON only.`,
+    },
+  ];
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 1500,
+    messages: [{ role: 'user', content }],
+  });
+
+  const text = response.content[0]?.text || '';
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+
+  const result = JSON.parse(jsonMatch[0]);
+  const isVerified = (result.confidence === 'High' || result.confidence === 'Medium') && result.fullName;
+  return {
+    code: result.code || null,
+    verified: !!isVerified,
+    fullName: isVerified ? result.fullName : null,
+    fundCompany: isVerified ? result.fundCompany : null,
+    cifscCategory: isVerified ? result.cifscCategory : (result.cifscCategory || null),
+    benchmarkIndex: result.benchmarkIndex || null,
+    riskRating: result.riskRating || null,
+    mer: result.mer ?? null,
+    distributionYield: result.distributionYield ?? null,
+    distributionFrequency: result.distributionFrequency ?? null,
+    assetAllocation: result.assetAllocation || [],
+    geographicAllocation: result.geographicAllocation || [],
+    dataAsAt: result.dataAsAt || null,
+    confidence: result.confidence || 'Low',
+  };
+}
+
 export async function submitChat(currentData, questions, answers) {
   if (!client) throw new Error('API key not set');
 
-  const prompt = buildChatPrompt(currentData, questions, answers);
+  // Process any PDF attachments first — extract fund data from each
+  const pdfResults = {};
+  for (let i = 0; i < questions.length; i++) {
+    const answer = answers[i];
+    if (answer && typeof answer === 'object' && answer.pdf) {
+      try {
+        const fundData = await extractFundDataFromPDF(questions[i], answer);
+        if (fundData) {
+          // Find the fund code this question relates to
+          const codeMatch = questions[i].id?.match(/^fund_(.+)$/);
+          const fundCode = codeMatch?.[1] || fundData.code;
+          if (fundCode) {
+            pdfResults[fundCode] = fundData;
+          }
+        }
+      } catch (err) {
+        console.error('PDF extraction failed:', err.message);
+      }
+    }
+  }
+
+  // Merge PDF fund results into currentData holdings
+  if (Object.keys(pdfResults).length > 0) {
+    for (const assetClass of currentData.assetClasses || []) {
+      for (const asset of assetClass.assets || []) {
+        for (const holding of asset.holdings || []) {
+          if (holding.code && pdfResults[holding.code]) {
+            holding.researchResult = pdfResults[holding.code];
+            holding.unverifiedBadge = false;
+          }
+        }
+      }
+    }
+  }
+
+  // Build text-only answers for the main chat synthesis (exclude PDF objects)
+  const textAnswers = answers.map((a) => {
+    if (a && typeof a === 'object' && a.pdf) {
+      return a.text ? `${a.text} [Fund fact sheet PDF was processed and data extracted]` : '[Fund fact sheet PDF was processed and data extracted]';
+    }
+    return a;
+  });
+
+  const prompt = buildChatPrompt(currentData, questions, textAnswers);
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 4000,
@@ -211,6 +352,21 @@ export async function submitChat(currentData, questions, answers) {
     const updated = JSON.parse(jsonMatch[0]);
     delete updated.planningFlags;
     delete updated.assumptionsAndNotes;
+
+    // Re-merge PDF fund results into updated data
+    if (Object.keys(pdfResults).length > 0) {
+      for (const assetClass of updated.assetClasses || []) {
+        for (const asset of assetClass.assets || []) {
+          for (const holding of asset.holdings || []) {
+            if (holding.code && pdfResults[holding.code]) {
+              holding.researchResult = pdfResults[holding.code];
+              holding.unverifiedBadge = false;
+            }
+          }
+        }
+      }
+    }
+
     return { data: updated };
   }
 

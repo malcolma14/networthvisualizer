@@ -173,8 +173,18 @@ export function calculateExposure(analysisData, fundResearch, activeOwner = 'All
           if (code && !sources.find((s) => s.code === code)) {
             sources.push({ code, dataAsAt: research.dataAsAt, verified: true });
           }
+        } else if (research && research.cifscCategory) {
+          // cifscCategory known even if full verification failed — use it to bucket
+          allocatedFromHoldings = true;
+          const bucket = mapAssetClass(research.cifscCategory);
+          if (!assetBuckets[bucket]) assetBuckets[bucket] = { name: bucket, value: 0, sources: [] };
+          assetBuckets[bucket].value += holdingValue;
+          assetBuckets[bucket].sources.push({ code, sleeve: research.cifscCategory, pct: 100 });
+          if (code && !sources.find((s) => s.code === code)) {
+            sources.push({ code, dataAsAt: research.dataAsAt || null, verified: false });
+          }
         } else if (research && !research.verified) {
-          // Unverified fund — exclude from allocation buckets
+          // Truly unknown — exclude from allocation buckets
           allocatedFromHoldings = true;
           unverifiedValue += holdingValue;
           unverifiedHoldings.push({ code, value: holdingValue });

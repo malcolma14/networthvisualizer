@@ -16,13 +16,36 @@ export default function ChatScreen({ data, onComplete, onSkipAll }) {
   const currentQuestion = questions[currentIndex];
   const isFundConfirm = currentQuestion?.type === 'fund_confirm';
 
-  function handleAnswer() {
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const base64 = e.target.result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleAnswer() {
     const newAnswers = [...answers];
-    let answer = inputValue.trim();
-    if (attachedFile) {
-      answer = `${answer ? answer + '\n' : ''}[Attached: ${attachedFile.name}]`;
+    const answer = inputValue.trim();
+
+    if (attachedFile && isFundConfirm) {
+      try {
+        const base64 = await readFileAsBase64(attachedFile);
+        newAnswers[currentIndex] = {
+          text: answer,
+          pdf: { base64, filename: attachedFile.name, mediaType: 'application/pdf' },
+        };
+      } catch {
+        newAnswers[currentIndex] = answer || `[Could not read ${attachedFile.name}]`;
+      }
+    } else {
+      newAnswers[currentIndex] = answer;
     }
-    newAnswers[currentIndex] = answer;
+
     setAnswers(newAnswers);
     setInputValue('');
     setAttachedFile(null);
@@ -83,7 +106,11 @@ export default function ChatScreen({ data, onComplete, onSkipAll }) {
                 <p className="text-sm text-ig-grey mb-1">Question {i + 1}</p>
                 <p className="text-ig-dark text-sm font-medium mb-2">{q.question}</p>
                 <p className="text-sm text-ig-mid">
-                  {answers[i] || <span className="italic text-ig-grey">Skipped</span>}
+                  {answers[i]
+                    ? (typeof answers[i] === 'object' && answers[i].pdf
+                      ? `${answers[i].text ? answers[i].text + ' ' : ''}[PDF: ${answers[i].pdf.filename}]`
+                      : answers[i])
+                    : <span className="italic text-ig-grey">Skipped</span>}
                 </p>
               </div>
             ))}
