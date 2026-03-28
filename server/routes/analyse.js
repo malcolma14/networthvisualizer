@@ -14,7 +14,7 @@ const client = new Anthropic();
 async function researchFund(fundCode) {
   try {
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 500,
       system: FUND_RESEARCH_SYSTEM_PROMPT,
       messages: [
@@ -78,7 +78,7 @@ router.post('/', async (req, res) => {
     // Step 3: Send to Claude for full analysis
     const prompt = buildAnalysisPrompt(parsedData, classification);
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 4000,
       system: ANALYSIS_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }],

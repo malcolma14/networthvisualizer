@@ -6,7 +6,7 @@ Internal tool for IG Wealth Management financial advisors. Upload a client's net
 ## Tech Stack
 - **Frontend:** React 19 + Vite + Tailwind CSS
 - **Backend:** Node.js + Express
-- **AI:** Anthropic Claude API (`claude-sonnet-4-5`) via `@anthropic-ai/sdk`
+- **AI:** Anthropic Claude API (`claude-sonnet-4-20250514`) via `@anthropic-ai/sdk`
 - **CSV Parsing:** PapaParse (client-side) + custom IG WM parser (server-side)
 - **PDF:** `window.print()` with landscape print CSS
 
@@ -44,7 +44,7 @@ Internal tool for IG Wealth Management financial advisors. Upload a client's net
 ## Anthropic API Integration
 - All API calls go through the Express server — API key never exposed to browser
 - Three call types: analysis, fund research (batched parallel), chat synthesis
-- Model: `claude-sonnet-4-5`
+- Model: `claude-sonnet-4-20250514`
 - API key loaded from `.env` as `ANTHROPIC_API_KEY`
 
 ## Brand Colours (IG Wealth Management)

@@ -5,7 +5,7 @@ import { analyseCSV } from '../lib/claude';
 const STATUS_MESSAGES = [
   'Reading the statement…',
   'Parsing accounts and holdings…',
-  'Researching holdings via FundLibrary…',
+  'Researching holdings via web search…',
   'Analyzing asset allocation…',
   'Preparing questions…',
 ];

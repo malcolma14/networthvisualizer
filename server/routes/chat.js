@@ -16,7 +16,7 @@ router.post('/', async (req, res) => {
     const prompt = buildChatPrompt(currentData, questions || [], answers || []);
 
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 4000,
       system: CHAT_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }],
