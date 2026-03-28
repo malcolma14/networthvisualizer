@@ -109,7 +109,7 @@ export default function ExposurePanel({ data, fundResearch, activeOwner = 'All' 
   useEffect(() => { setExpandedGroup(null); }, [activeOwner]);
 
   const exposure = useMemo(() => calculateExposure(data, fundResearch, activeOwner), [data, fundResearch, activeOwner]);
-  const { grossAssets, broadGroups, geographies, summaryChips, sources, distributions, fees } = exposure;
+  const { grossAssets, unverifiedValue, broadGroups, geographies, summaryChips, sources, distributions, fees } = exposure;
 
   const donutSlices = broadGroups.map((g) => ({ name: g.name, percent: g.percent, color: g.color }));
 
@@ -221,6 +221,12 @@ export default function ExposurePanel({ data, fundResearch, activeOwner = 'All' 
                   </div>
                 );
               })}
+              {unverifiedValue > 0 && (
+                <div className="mt-2 px-3 py-2 bg-amber-50 border border-ig-amber/20 rounded-lg flex items-center gap-2 text-xs text-ig-amber">
+                  <span>⚠</span>
+                  <span>{formatCurrency(unverifiedValue)} in unverified holdings excluded from allocation — see badges below</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -238,13 +244,22 @@ export default function ExposurePanel({ data, fundResearch, activeOwner = 'All' 
 
         {/* Source attribution */}
         {sources.length > 0 && (
-          <div className="px-4 pb-3">
-            <p className="text-[10px] text-ig-grey leading-relaxed border-t border-ig-grey/10 pt-2">
+          <div className="px-4 pb-3 border-t border-ig-grey/10 pt-2">
+            <div className="flex flex-wrap gap-x-2 gap-y-1 text-[10px] leading-relaxed">
               {sources.map((s) =>
-                s.verified && s.dataAsAt ? `${s.code} as at ${s.dataAsAt}` :
-                s.verified ? `${s.code}` : `${s.code} (unverified)`
-              ).join(' · ')}
-            </p>
+                s.verified ? (
+                  <span key={s.code} className="text-ig-grey">
+                    {s.code}{s.dataAsAt ? ` as at ${s.dataAsAt}` : ''}
+                  </span>
+                ) : (
+                  <span key={s.code} className="inline-flex items-center gap-0.5">
+                    <span className="text-ig-grey">{s.code}</span>
+                    <span className="text-[9px] text-ig-amber font-medium">⚠ Unverified</span>
+                  </span>
+                )
+              )}
+            </div>
+            <p className="text-[9px] text-ig-grey mt-1 italic">Allocation data sourced from FundLibrary via web search</p>
           </div>
         )}
       </div>

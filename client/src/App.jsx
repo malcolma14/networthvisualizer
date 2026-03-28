@@ -12,6 +12,7 @@ export default function App() {
   const [screen, setScreen] = useState(SCREENS.PASSWORD);
   const [analysisData, setAnalysisData] = useState(null);
   const [fundResearch, setFundResearch] = useState({});
+  const [familyTree, setFamilyTree] = useState(null);
 
   // Restore auth from sessionStorage on mount
   useEffect(() => {
@@ -34,13 +35,26 @@ export default function App() {
   }
 
   function handleAnalysisComplete(result) {
+    // Single profile mode
     setAnalysisData(result.data);
     setFundResearch(result.fundResearch || {});
+    setFamilyTree(null);
     if (result.data.clarifyingQuestions?.length > 0) {
       setScreen(SCREENS.CHAT);
     } else {
       setScreen(SCREENS.DASHBOARD);
     }
+  }
+
+  function handleFamilyTreeComplete(tree) {
+    // Multi-member mode — use first member's data for chat, store full tree
+    setFamilyTree(tree);
+    const firstMember = tree.generations[0]?.members[0];
+    if (firstMember) {
+      setAnalysisData(firstMember.analysisData);
+      setFundResearch(firstMember.fundResearch || {});
+    }
+    setScreen(SCREENS.DASHBOARD);
   }
 
   function handleChatComplete(updatedData) {
@@ -52,7 +66,7 @@ export default function App() {
     setScreen(SCREENS.UPLOAD);
     setAnalysisData(null);
     setFundResearch({});
-    // Fund research cache is per-analysis, no separate clear needed
+    setFamilyTree(null);
   }
 
   return (
@@ -61,7 +75,10 @@ export default function App() {
         <PasswordScreen onAuthenticated={handleAuthenticated} />
       )}
       {screen === SCREENS.UPLOAD && (
-        <UploadScreen onComplete={handleAnalysisComplete} />
+        <UploadScreen
+          onComplete={handleAnalysisComplete}
+          onFamilyTreeComplete={handleFamilyTreeComplete}
+        />
       )}
       {screen === SCREENS.CHAT && analysisData && (
         <ChatScreen
@@ -74,6 +91,7 @@ export default function App() {
         <Dashboard
           data={analysisData}
           fundResearch={fundResearch}
+          familyTree={familyTree}
           onReset={handleReset}
         />
       )}

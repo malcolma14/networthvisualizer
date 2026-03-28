@@ -1,7 +1,5 @@
 import { useState } from 'react';
 
-const HASH = '5a8d4e2c'; // partial hash for obfuscation — actual check below
-
 export default function PasswordScreen({ onAuthenticated }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
@@ -9,7 +7,7 @@ export default function PasswordScreen({ onAuthenticated }) {
   function handleSubmit(e) {
     e.preventDefault();
     // Simple check — this is a deterrent, not cryptographic security
-    if (password === 'a8pECuJ%7AHmDMc#Qtr%') {
+    if (password === (import.meta.env.VITE_APP_PASSWORD || '')) {
       sessionStorage.setItem('nwd_auth', '1');
       onAuthenticated();
     } else {

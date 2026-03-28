@@ -25,6 +25,10 @@
     display: none !important;
   }
 
+  .print-only {
+    display: block !important;
+  }
+
   .print-break-avoid {
     break-inside: avoid;
   }

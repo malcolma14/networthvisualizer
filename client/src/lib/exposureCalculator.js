@@ -65,6 +65,8 @@ export function calculateExposure(analysisData, fundResearch, activeOwner = 'All
   let totalDistributions = 0;
   let totalFees = 0;
   let totalFeeableAssets = 0;
+  let unverifiedValue = 0;
+  const unverifiedHoldings = [];
 
   for (const cls of ASSET_CLASS_ORDER) assetBuckets[cls] = { name: cls, value: 0, sources: [] };
   for (const geo of GEO_ORDER) geoBuckets[geo] = { name: geo, value: 0 };
@@ -171,7 +173,14 @@ export function calculateExposure(analysisData, fundResearch, activeOwner = 'All
           if (code && !sources.find((s) => s.code === code)) {
             sources.push({ code, dataAsAt: research.dataAsAt, verified: true });
           }
+        } else if (research && !research.verified) {
+          // Unverified fund — exclude from allocation buckets
+          allocatedFromHoldings = true;
+          unverifiedValue += holdingValue;
+          unverifiedHoldings.push({ code, value: holdingValue });
+          if (code) sources.push({ code, dataAsAt: null, verified: false });
         } else {
+          // No research at all — bucket by group name
           allocatedFromHoldings = true;
           const bucket = mapAssetClass(group.name);
           if (!assetBuckets[bucket]) assetBuckets[bucket] = { name: bucket, value: 0, sources: [] };
@@ -211,7 +220,14 @@ export function calculateExposure(analysisData, fundResearch, activeOwner = 'All
           assetBuckets['Other'].value += accountValue;
         } else if (groupName === 'Private equity' || groupName === 'Corporations') {
           assetBuckets['Private alternatives'].value += accountValue;
-          geoBuckets['Canada'].value += accountValue;
+          // Use advisor-provided geo from notes if available
+          const notesLower = (asset.notes || '').toLowerCase();
+          if (notesLower.includes('corp geo: international') || notesLower.includes('corp geo: foreign')) {
+            // Don't assign to Canada — leave unallocated geographically
+          } else if (notesLower.includes('corp geo:')) {
+            geoBuckets['Canada'].value += accountValue;
+          }
+          // If no corp geo note at all, leave geo unallocated (don't assume Canada)
         } else {
           const bucket = mapAssetClass(groupName);
           if (!assetBuckets[bucket]) assetBuckets[bucket] = { name: bucket, value: 0, sources: [] };
@@ -279,6 +295,8 @@ export function calculateExposure(analysisData, fundResearch, activeOwner = 'All
 
   return {
     grossAssets,
+    unverifiedValue,
+    unverifiedHoldings,
     assetClasses: assetClassList,
     broadGroups: broadGroupList,
     geographies: geoList,
