@@ -102,17 +102,13 @@ async function researchSingleFund(code, onStatus) {
     };
   }
 
-  // Not in static library — fall through to web search
-  onStatus?.(`Researching ${code} via web search…`);
-  const searchStrategy = buildSearchStrategy(code);
+  // Not in static library — use model knowledge first, web search as fallback
+  onStatus?.(`Researching ${code}…`);
 
-  // ─── Phase 1: Identify the fund ───
-  const phase1Prompt = `You are a Canadian investment fund research assistant. Use the web_search tool to look up fund code "${code}".
+  const prompt = `You are a Canadian investment fund expert with deep knowledge of IG Wealth Management, Dimensional Fund Advisors (DFA), Mackenzie, CI, Fidelity, AGF, and other Canadian fund families.
 
-SEARCH STRATEGY — follow this order:
-${searchStrategy}
-
-If the primary search yields nothing useful, try the secondary search. If both fail, try a general search: "${code} fund Canada".
+For fund code "${code}", answer from your training knowledge first.
+Only use the web_search tool if you genuinely do not recognise the fund.
 
 Return a JSON object with these fields:
 - code: "${code}"
@@ -124,40 +120,45 @@ Return a JSON object with these fields:
 - mer: MER as a number e.g. 1.25 (null if unknown)
 - distributionYield: Trailing 12-month yield as a number (null if unknown)
 - distributionFrequency: "Monthly", "Quarterly", "Annually", or null
+- assetAllocation: Array of {name, percent} — the fund's portfolio breakdown by asset class
+- geographicAllocation: Array of {name, percent} — the fund's geographic exposure
 - dataAsAt: Date of data if known, else null
 - confidence: "High", "Medium", or "Low"
 
-CONFIDENCE RULES:
-- "High": You found the exact fund page and extracted detailed data
-- "Medium": You identified the fund name and CIFSC category but could not get full allocation tables. This is STILL VALID.
-- "Low": You could not confidently identify the fund at all — set fullName to null
+If you know this fund well from training data, set confidence "High" and populate all fields you know. Do not search the web for funds you already know.
+If you are somewhat familiar but uncertain on details, set confidence "Medium" and use web_search to verify.
+If you have never heard of this fund code, set confidence "Low" and use web_search.
+
+Standard asset class names ONLY: "Canadian equity", "US equity", "International equity", "Global equity", "Fixed income", "Cash & equivalents", "Real estate — listed", "Private alternatives", "Other"
+Standard geo names ONLY: "Canada", "United States", "Europe", "Japan", "Asia ex-Japan", "Other/EM"
 
 CRITICAL:
-- NEVER guess a name with High confidence — better to say Medium or Low than be wrong
-- Respond with JSON only — no markdown fences, no explanation`;
+- Respond with JSON only — no markdown fences, no explanation
+- Use only straight ASCII quotes in JSON`;
 
   try {
-    const phase1Response = await client.messages.create({
+    const response = await client.messages.create({
       model: FUND_RESEARCH_MODEL,
-      max_tokens: 1200,
-      system: phase1Prompt,
+      max_tokens: 2000,
+      system: prompt,
       tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
-      messages: [{ role: 'user', content: `Identify fund code "${code}" and return the JSON object.` }],
+      messages: [{ role: 'user', content: `Identify fund code "${code}" and return the complete JSON object including asset allocation and geographic allocation.` }],
     });
 
-    const phase1Text = phase1Response.content.filter((b) => b.type === 'text').pop()?.text || '';
-    const phase1 = safeParseJSON(phase1Text, `phase1-${code}`);
-    if (!phase1) {
+    const responseText = response.content.filter((b) => b.type === 'text').pop()?.text || '';
+    const result = safeParseJSON(responseText, `fund-${code}`);
+    if (!result) {
       onStatus?.(`${code} — not found`);
       return { code, verified: false, fullName: null, confidence: 'Low' };
     }
-    const isVerified = (phase1.confidence === 'High' || phase1.confidence === 'Medium') && phase1.fullName;
+
+    const isVerified = (result.confidence === 'High' || result.confidence === 'Medium') && result.fullName;
 
     if (!isVerified) {
       onStatus?.(`${code} — not found`);
       return {
         code, verified: false, fullName: null,
-        fundCompany: null, cifscCategory: phase1.cifscCategory || null,
+        fundCompany: null, cifscCategory: result.cifscCategory || null,
         benchmarkIndex: null, riskRating: null,
         mer: null, distributionYield: null, distributionFrequency: null,
         assetAllocation: [], geographicAllocation: [],
@@ -165,52 +166,8 @@ CRITICAL:
       };
     }
 
-    // ─── Phase 2: Get holdings/allocation data ───
-    onStatus?.(`Researching ${code} holdings…`);
-    const fullName = phase1.fullName;
-    const fundCompany = phase1.fundCompany || '';
-
-    const phase2Prompt = `You are a Canadian investment fund research assistant. You have already identified the fund:
-- Code: "${code}"
-- Name: "${fullName}"
-- Company: "${fundCompany}"
-
-Now use the web_search tool to find the PORTFOLIO HOLDINGS and ASSET ALLOCATION data for this fund. Search specifically for the portfolio breakdown, NOT just the fund summary page.
-
-Search queries to try in order:
-1. "${fullName} portfolio holdings ${new Date().getFullYear()}"
-2. "${fullName} fund facts asset allocation"
-3. "${code} ${fundCompany} portfolio top holdings"
-
-From whatever you find, extract:
-- assetAllocation: Array of {name, percent} using these standard names ONLY: "Canadian equity", "US equity", "International equity", "Global equity", "Fixed income", "Cash & equivalents", "Real estate — listed", "Private alternatives", "Other"
-- geographicAllocation: Array of {name, percent} using these standard names ONLY: "Canada", "United States", "Europe", "Japan", "Asia ex-Japan", "Other/EM"
-
-If you cannot find specific allocation data, return empty arrays.
-Return JSON only with fields: assetAllocation, geographicAllocation`;
-
-    let assetAllocation = [];
-    let geographicAllocation = [];
-
-    try {
-      const phase2Response = await client.messages.create({
-        model: FUND_RESEARCH_MODEL,
-        max_tokens: 1200,
-        system: phase2Prompt,
-        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }],
-        messages: [{ role: 'user', content: `Find the portfolio holdings breakdown for "${fullName}" (${code}).` }],
-      });
-
-      const phase2Text = phase2Response.content.filter((b) => b.type === 'text').pop()?.text || '';
-      const phase2 = safeParseJSON(phase2Text, `phase2-${code}`);
-      if (phase2) {
-        assetAllocation = phase2.assetAllocation || [];
-        geographicAllocation = phase2.geographicAllocation || [];
-      }
-    } catch (err) {
-      console.error(`Phase 2 failed for ${code}:`, err.message);
-    }
-
+    const assetAllocation = result.assetAllocation || [];
+    const geographicAllocation = result.geographicAllocation || [];
     const allocationMissing = assetAllocation.length === 0 && geographicAllocation.length === 0;
     const statusLabel = allocationMissing ? `${code} — verified (no allocation data)` : `${code} — verified`;
     onStatus?.(statusLabel);
@@ -218,18 +175,18 @@ Return JSON only with fields: assetAllocation, geographicAllocation`;
     return {
       code,
       verified: true,
-      fullName: phase1.fullName,
-      fundCompany: phase1.fundCompany || null,
-      cifscCategory: phase1.cifscCategory || null,
-      benchmarkIndex: phase1.benchmarkIndex || null,
-      riskRating: phase1.riskRating || null,
-      mer: phase1.mer ?? null,
-      distributionYield: phase1.distributionYield ?? null,
-      distributionFrequency: phase1.distributionFrequency ?? null,
+      fullName: result.fullName,
+      fundCompany: result.fundCompany || null,
+      cifscCategory: result.cifscCategory || null,
+      benchmarkIndex: result.benchmarkIndex || null,
+      riskRating: result.riskRating || null,
+      mer: result.mer ?? null,
+      distributionYield: result.distributionYield ?? null,
+      distributionFrequency: result.distributionFrequency ?? null,
       assetAllocation,
       geographicAllocation,
-      dataAsAt: phase1.dataAsAt || null,
-      confidence: phase1.confidence || 'Medium',
+      dataAsAt: result.dataAsAt || null,
+      confidence: result.confidence || 'Medium',
       allocationMissing,
     };
   } catch (err) {
@@ -258,8 +215,8 @@ export async function analyseCSV(csvData, onStatus) {
   const parsedData = parseCSVData(csvData);
   const classification = classifyAndFlag(parsedData);
 
-  // Research fund codes via Claude web search
-  onStatus?.('Researching holdings via web search…');
+  // Research fund codes — model knowledge first, web search as fallback
+  onStatus?.('Researching holdings…');
   const fundResults = await researchFunds(classification.fundCodes, onStatus);
 
   // Identify funds needing clarifying questions
