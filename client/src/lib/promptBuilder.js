@@ -16,6 +16,8 @@ For real estate assets (homes, rental properties, cottages), include a clarifyin
 - Estimated annual gross rental income (if applicable)
 - Estimated annual expenses (property tax, insurance, maintenance)
 
+For any holding where fund research returned no asset allocation data, generate a clarifying question asking the advisor to upload the fund facts PDF for that specific holding. Name the fund code explicitly in the question.
+
 For corporate accounts (Corporations section), include a clarifying question asking:
 - Whether the corporation's primary assets are Canadian or foreign/international
 - Store the answer in the asset's notes field as "Corp geo: Canada" or "Corp geo: International"

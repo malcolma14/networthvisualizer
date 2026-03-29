@@ -264,7 +264,7 @@ export async function analyseCSV(csvData, onStatus) {
 
   // Identify funds needing clarifying questions
   const questionableFunds = Object.entries(fundResults)
-    .filter(([, r]) => !r.verified || r.allocationMissing)
+    .filter(([, r]) => !r.verified || r.allocationMissing || (!r.verified && !r.cifscCategory))
     .map(([code, r]) => ({ code, verified: r.verified, allocationMissing: r.allocationMissing, fullName: r.fullName }));
 
   // Full analysis via Claude
@@ -312,11 +312,11 @@ export async function analyseCSV(csvData, onStatus) {
 
     const question = !verified
       ? `Fund code "${code}" couldn't be identified. Please upload the fund fact sheet PDF or paste the fund page URL.`
-      : `Fund "${fullName}" (${code}) was identified but we couldn't find its underlying holdings breakdown. Please upload the fund fact sheet PDF so we can show the correct asset allocation.`;
+      : `"${fullName || code}" was found but we could not retrieve its underlying portfolio breakdown. To show accurate asset allocation in the dashboard, please upload the fund facts PDF or paste the fund page URL.`;
 
     const context = !verified
       ? `Fund code ${code} could not be matched to a known fund with high confidence.`
-      : `Fund ${code} was verified as "${fullName}" but detailed allocation data is missing.`;
+      : `Without allocation data, this holding will appear as "unverified" in the exposure chart.`;
 
     analysisResult.clarifyingQuestions.push({
       id: `fund_${code}`,
@@ -479,4 +479,77 @@ export async function submitChat(currentData, questions, answers) {
   }
 
   return { data: currentData };
+}
+
+export async function dashboardChat(currentData, conversationHistory, userMessage, pdfAttachment = null) {
+  if (!client) throw new Error('Client not initialised');
+
+  const systemPrompt = `You are a financial data assistant helping an advisor update a client's net worth dashboard.
+
+The current dashboard data is provided below. The advisor may ask you to:
+- Correct ownership of accounts (e.g. "that RRSP belongs to Jane")
+- Update asset values
+- Add or correct fund allocation data
+- Process an uploaded fund facts PDF to extract asset allocation
+
+When making changes, return the COMPLETE updated data object as JSON, wrapped in a \`\`\`json code block.
+If no data changes are needed (e.g. the advisor is just asking a question), respond conversationally without a JSON block.
+
+RULES:
+- Only change what the advisor explicitly asks you to change
+- Never add advisory language or recommendations
+- For fund facts PDFs, extract: fullName, cifscCategory, mer, assetAllocation, geographicAllocation
+- After extracting fund facts, merge them into the appropriate holding's researchResult in the data
+- Use only straight ASCII quotes in JSON. Never use smart quotes, em dashes, or special punctuation inside JSON string values.
+
+Current dashboard data:
+${JSON.stringify(currentData, null, 2)}`;
+
+  const messages = [
+    ...conversationHistory.map(m => ({ role: m.role, content: m.content })),
+  ];
+
+  if (pdfAttachment) {
+    messages.push({
+      role: 'user',
+      content: [
+        {
+          type: 'document',
+          source: {
+            type: 'base64',
+            media_type: 'application/pdf',
+            data: pdfAttachment.base64,
+          },
+        },
+        {
+          type: 'text',
+          text: userMessage || 'Please extract the fund allocation data from this fund facts PDF and update the dashboard.',
+        },
+      ],
+    });
+  } else {
+    messages.push({ role: 'user', content: userMessage });
+  }
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 8000,
+    system: systemPrompt,
+    messages,
+  });
+
+  const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+
+  // Check if the response contains updated data
+  const jsonMatch = text.match(/```json\s*([\s\S]*?)```/);
+  let updatedData = null;
+  let displayText = text;
+
+  if (jsonMatch) {
+    updatedData = safeParseJSON(jsonMatch[1], 'dashboard-chat');
+    displayText = text.replace(/```json[\s\S]*?```/, '').trim();
+    if (!displayText) displayText = 'Done — dashboard updated.';
+  }
+
+  return { text: displayText, updatedData };
 }
