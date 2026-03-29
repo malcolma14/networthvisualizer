@@ -17,6 +17,37 @@ if (!API_KEY) {
   );
 }
 
+function safeParseJSON(text, label = 'response') {
+  // Strip any markdown code fences Claude might have added
+  let cleaned = text
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .trim();
+
+  // Extract the outermost JSON object
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+
+  let jsonStr = match[0];
+
+  // Fix common Claude response issues:
+  // 1. Replace smart quotes with straight quotes
+  jsonStr = jsonStr
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"');
+
+  // 2. Remove any control characters except whitespace
+  jsonStr = jsonStr.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+
+  try {
+    return JSON.parse(jsonStr);
+  } catch (err) {
+    console.error(`JSON parse failed for ${label}:`, err.message);
+    console.error('First 500 chars of attempted parse:', jsonStr.slice(0, 500));
+    return null;
+  }
+}
+
 let client = null;
 
 export function initClient() {
@@ -115,13 +146,11 @@ CRITICAL:
     });
 
     const phase1Text = phase1Response.content.filter((b) => b.type === 'text').pop()?.text || '';
-    const phase1Match = phase1Text.match(/\{[\s\S]*\}/);
-    if (!phase1Match) {
+    const phase1 = safeParseJSON(phase1Text, `phase1-${code}`);
+    if (!phase1) {
       onStatus?.(`${code} — not found`);
       return { code, verified: false, fullName: null, confidence: 'Low' };
     }
-
-    const phase1 = JSON.parse(phase1Match[0]);
     const isVerified = (phase1.confidence === 'High' || phase1.confidence === 'Medium') && phase1.fullName;
 
     if (!isVerified) {
@@ -173,9 +202,8 @@ Return JSON only with fields: assetAllocation, geographicAllocation`;
       });
 
       const phase2Text = phase2Response.content.filter((b) => b.type === 'text').pop()?.text || '';
-      const phase2Match = phase2Text.match(/\{[\s\S]*\}/);
-      if (phase2Match) {
-        const phase2 = JSON.parse(phase2Match[0]);
+      const phase2 = safeParseJSON(phase2Text, `phase2-${code}`);
+      if (phase2) {
         assetAllocation = phase2.assetAllocation || [];
         geographicAllocation = phase2.geographicAllocation || [];
       }
@@ -244,16 +272,14 @@ export async function analyseCSV(csvData, onStatus) {
   const prompt = buildAnalysisPrompt(parsedData, classification);
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 4000,
+    max_tokens: 8000,
     system: ANALYSIS_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],
   });
 
   const text = response.content[0]?.text || '';
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('Failed to parse Claude analysis response');
-
-  const analysisResult = JSON.parse(jsonMatch[0]);
+  const analysisResult = safeParseJSON(text, 'analysis');
+  if (!analysisResult) throw new Error('Could not parse analysis response — please try uploading again.');
 
   // Merge fund research into holdings
   if (analysisResult.assetClasses) {
@@ -353,10 +379,9 @@ Return JSON only.`,
   });
 
   const text = response.content[0]?.text || '';
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) return null;
+  const result = safeParseJSON(text, 'pdf-extraction');
+  if (!result) return null;
 
-  const result = JSON.parse(jsonMatch[0]);
   const isVerified = (result.confidence === 'High' || result.confidence === 'Medium') && result.fullName;
   return {
     code: result.code || null,
@@ -431,10 +456,8 @@ export async function submitChat(currentData, questions, answers) {
   });
 
   const text = response.content[0]?.text || '';
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-
-  if (jsonMatch) {
-    const updated = JSON.parse(jsonMatch[0]);
+  const updated = safeParseJSON(text, 'chat');
+  if (updated) {
     delete updated.planningFlags;
     delete updated.assumptionsAndNotes;
 

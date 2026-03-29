@@ -29,6 +29,8 @@ IMPORTANT RULES:
 
 Respond in structured JSON only.
 
+FORMATTING: Use only straight ASCII quotes in your JSON. Never use smart quotes, em dashes, or special punctuation inside JSON string values.
+
 JSON shape:
 {
   "clientName": string,
