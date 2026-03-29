@@ -1,7 +1,7 @@
-export default function PrintButton() {
+export default function PrintButton({ onClick }) {
   return (
     <button
-      onClick={() => window.print()}
+      onClick={onClick || (() => window.print())}
       className="no-print px-4 py-1.5 bg-ig-mid text-white text-xs font-semibold rounded-lg hover:bg-ig-light hover:text-ig-dark transition-colors flex items-center gap-1.5"
     >
       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

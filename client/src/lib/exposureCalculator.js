@@ -23,6 +23,10 @@ const BROAD_GROUPS = {
 function mapAssetClass(raw) {
   if (!raw) return 'Other';
   const l = raw.toLowerCase();
+  // Exact matches for CSV parser group names — must come before partial includes
+  if (l === 'public equity') return 'Global equity';
+  if (l === 'private equity') return 'Private alternatives';
+  if (l === 'cash') return 'Cash & equivalents';
   if (l.includes('canadian equity') || l.includes('cdn equity')) return 'Canadian equity';
   if (l.includes('us equity') || l.includes('u.s. equity') || l.includes('american equity')) return 'US equity';
   if (l.includes('international equity') || l.includes('intl equity') || l.includes('european equity') || l.includes('asia') || l.includes('emerging')) return 'International equity';
@@ -246,6 +250,15 @@ export function calculateExposure(analysisData, fundResearch, activeOwner = 'All
               expenses: rental.expenses,
             });
           }
+        } else if (
+          groupName === 'Public equity' ||
+          groupName === 'Registered accounts' ||
+          groupName === 'Non-registered accounts'
+        ) {
+          // No holdings data — bucket the whole account as Global equity
+          // This keeps the donut consistent with the right-side account list
+          assetBuckets['Global equity'].value += accountValue;
+          sources.push({ code: asset.name, dataAsAt: null, verified: false });
         } else if (groupName === 'Insurance' || groupName === 'Physical assets') {
           assetBuckets['Other'].value += accountValue;
         } else if (groupName === 'Private equity' || groupName === 'Corporations') {
