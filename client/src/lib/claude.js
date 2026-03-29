@@ -7,7 +7,7 @@ import {
 } from './promptBuilder.js';
 import { parseCSVData } from './csvParser.js';
 import { classifyAndFlag } from './assetClassifier.js';
-import FUND_LIBRARY from './fundLibrary.json';
+import FUND_LIBRARY from './fundLibrary.js';
 
 const API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY;
 
